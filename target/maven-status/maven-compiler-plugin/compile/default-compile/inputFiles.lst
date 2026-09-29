@@ -1,3 +1,10 @@
-/home/vahid/Documents/Maestro/src/main/java/com/maestro/App.java
-/home/vahid/Documents/Maestro/src/main/java/com/maestro/Status.java
-/home/vahid/Documents/Maestro/src/main/java/com/maestro/Student.java
+/home/vahid/Maestro/src/main/java/com/maestro/MaestroGui.java
+/home/vahid/Maestro/src/main/java/com/maestro/Student.java
+/home/vahid/Maestro/src/main/java/com/maestro/Instrument.java
+/home/vahid/Maestro/src/main/java/com/maestro/Course.java
+/home/vahid/Maestro/src/main/java/com/maestro/Status.java
+/home/vahid/Maestro/src/main/java/com/maestro/Enrollment.java
+/home/vahid/Maestro/src/main/java/com/maestro/Payment.java
+/home/vahid/Maestro/src/main/java/com/maestro/App.java
+/home/vahid/Maestro/src/main/java/com/maestro/Teacher.java
+/home/vahid/Maestro/src/main/java/com/maestro/ClassGroup.java
