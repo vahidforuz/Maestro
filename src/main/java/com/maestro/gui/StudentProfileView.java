@@ -35,6 +35,9 @@ public class StudentProfileView extends GridPane {
 
       add(new Label("Instrument:"), 0, 4);
       add(new Label(student.getInstrument().toString()), 1, 4);
+
+      add(new Label("Student type:"), 0, 5);
+      add(new Label(student.hasTeacher() ? "Linked to teacher #" + student.getTeacherId() : "Standalone"), 1, 5);
       
       for (Payment payment : payments) {
          String paymentText = payment.getAmount()

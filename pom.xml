@@ -19,6 +19,11 @@
       <version>${javafx.version}</version>
     </dependency>
     <dependency>
+      <groupId>com.calendarfx</groupId>
+      <artifactId>view</artifactId>
+      <version>12.1.0</version>
+    </dependency>
+    <dependency>
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
       <version>3.8.1</version>

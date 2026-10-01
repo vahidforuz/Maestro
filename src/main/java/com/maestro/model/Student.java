@@ -13,6 +13,7 @@ public class Student {
   private Status status;
   private Instrument instrument;
   private Level level;
+  private Integer teacherId;
 
   public Student(String name, LocalDate birthday) {
     this.name = name;
@@ -33,6 +34,18 @@ public class Student {
     this.email = email;
     this.instrument = instrument;
     this.level = level;
+  }
+
+  public Student(
+      String firstName,
+      String familyName,
+      String phone,
+      String email,
+      Instrument instrument,
+      Level level,
+      Integer teacherId) {
+    this(firstName, familyName, phone, email, instrument, level);
+    this.teacherId = teacherId;
   }
 
   public int getId() {
@@ -115,6 +128,18 @@ public class Student {
 
   public void setLevel(Level level) {
     this.level = level;
+  }
+
+  public Integer getTeacherId() {
+    return teacherId;
+  }
+
+  public void setTeacherId(Integer teacherId) {
+    this.teacherId = teacherId;
+  }
+
+  public boolean hasTeacher() {
+    return teacherId != null;
   }
 
   private String buildName() {

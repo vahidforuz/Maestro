@@ -3,8 +3,10 @@ package com.maestro.gui;
 import com.maestro.model.Instrument;
 import com.maestro.model.Level;
 import com.maestro.model.Student;
+import com.maestro.model.Teacher;
 import javafx.geometry.Insets;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
@@ -14,6 +16,10 @@ import javafx.scene.layout.GridPane;
 public class AddStudentDialog extends Dialog<Student> {
 
    public AddStudentDialog() {
+      this(null);
+   }
+
+   public AddStudentDialog(Teacher currentTeacher) {
       setTitle("Add New Student");
       setHeaderText(null);
 
@@ -29,6 +35,10 @@ public class AddStudentDialog extends Dialog<Student> {
       ComboBox<Level> levelBox = new ComboBox<>();
       levelBox.getItems().addAll(Level.values());
       levelBox.setValue(Level.BEGINNER);
+
+      CheckBox linkedToTeacherBox = new CheckBox("Link to current teacher");
+      linkedToTeacherBox.setSelected(currentTeacher != null);
+      linkedToTeacherBox.setDisable(currentTeacher == null);
 
       GridPane grid = new GridPane();
       grid.setHgap(10);
@@ -53,6 +63,9 @@ public class AddStudentDialog extends Dialog<Student> {
       grid.add(new Label("Level:"), 0, 5);
       grid.add(levelBox, 1, 5);
 
+      grid.add(new Label("Student type:"), 0, 6);
+      grid.add(linkedToTeacherBox, 1, 6);
+
       getDialogPane().setContent(grid);
       getDialogPane().getButtonTypes().addAll(ButtonType.CANCEL, ButtonType.OK);
 
@@ -64,7 +77,10 @@ public class AddStudentDialog extends Dialog<Student> {
                   phoneField.getText(),
                   emailField.getText(),
                   instrumentBox.getValue(),
-                  levelBox.getValue());
+                  levelBox.getValue(),
+                  linkedToTeacherBox.isSelected() && currentTeacher != null
+                        ? currentTeacher.getId()
+                        : null);
          }
 
          return null;
