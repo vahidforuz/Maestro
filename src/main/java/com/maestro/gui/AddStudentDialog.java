@@ -1,5 +1,8 @@
 package com.maestro.gui;
 
+import com.maestro.model.Instrument;
+import com.maestro.model.Level;
+import com.maestro.model.Student;
 import javafx.geometry.Insets;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ComboBox;
@@ -8,7 +11,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.GridPane;
 
-public class AddStudentDialog extends Dialog<Void> {
+public class AddStudentDialog extends Dialog<Student> {
 
    public AddStudentDialog() {
       setTitle("Add New Student");
@@ -19,13 +22,13 @@ public class AddStudentDialog extends Dialog<Void> {
       TextField phoneField = new TextField();
       TextField emailField = new TextField();
 
-      ComboBox<String> instrumentBox = new ComboBox<>();
-      instrumentBox.getItems().addAll("Piano", "Guitar", "Violin", "Drums", "Voice");
-      instrumentBox.setValue("Piano");
+      ComboBox<Instrument> instrumentBox = new ComboBox<>();
+      instrumentBox.getItems().addAll(Instrument.values());
+      instrumentBox.setValue(Instrument.PIANO);
 
-      ComboBox<String> levelBox = new ComboBox<>();
-      levelBox.getItems().addAll("Beginner", "Intermediate", "Advanced");
-      levelBox.setValue("Beginner");
+      ComboBox<Level> levelBox = new ComboBox<>();
+      levelBox.getItems().addAll(Level.values());
+      levelBox.setValue(Level.BEGINNER);
 
       GridPane grid = new GridPane();
       grid.setHgap(10);
@@ -55,14 +58,13 @@ public class AddStudentDialog extends Dialog<Void> {
 
       setResultConverter(button -> {
          if (button == ButtonType.OK) {
-            String firstName = firstNameField.getText();
-            String lastName = lastNameField.getText();
-            String phone = phoneField.getText();
-            String email = emailField.getText();
-            String instrument = instrumentBox.getValue();
-            String level = levelBox.getValue();
-
-            System.out.println("Saving student: " + firstName + " " + lastName);
+            return new Student(
+                  firstNameField.getText(),
+                  lastNameField.getText(),
+                  phoneField.getText(),
+                  emailField.getText(),
+                  instrumentBox.getValue(),
+                  levelBox.getValue());
          }
 
          return null;

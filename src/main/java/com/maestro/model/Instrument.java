@@ -10,5 +10,11 @@ public enum Instrument {
     TRUMPET,
     CELLO,
     HARP,
-    CLARINET
+    CLARINET;
+
+    @Override
+    public String toString() {
+        String lowerName = name().toLowerCase();
+        return lowerName.substring(0, 1).toUpperCase() + lowerName.substring(1);
+    }
 }

@@ -6,6 +6,7 @@ com/maestro/model/Payment.class
 com/maestro/model/Status.class
 com/maestro/model/Teacher.class
 com/maestro/model/Instrument.class
+com/maestro/model/Level.class
 com/maestro/model/ClassGroup.class
 com/maestro/service/StudentService.class
 com/maestro/model/EnrollmentStatus.class
@@ -13,4 +14,5 @@ com/maestro/model/Course.class
 com/maestro/model/TypeCourse.class
 com/maestro/service/TeacherServiceImpl.class
 com/maestro/gui/AddStudentDialog.class
+com/maestro/gui/StudentProfileView.class
 com/maestro/service/PaymentService.class
