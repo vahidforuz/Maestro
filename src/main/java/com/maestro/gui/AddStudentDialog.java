@@ -4,7 +4,11 @@ import com.maestro.model.Instrument;
 import com.maestro.model.Level;
 import com.maestro.model.Student;
 import com.maestro.model.Teacher;
+import java.time.DayOfWeek;
+import java.time.LocalTime;
+import java.time.format.DateTimeParseException;
 import javafx.geometry.Insets;
+import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
@@ -36,6 +40,13 @@ public class AddStudentDialog extends Dialog<Student> {
       levelBox.getItems().addAll(Level.values());
       levelBox.setValue(Level.BEGINNER);
 
+      ComboBox<DayOfWeek> courseDayBox = new ComboBox<>();
+      courseDayBox.getItems().addAll(DayOfWeek.values());
+      courseDayBox.setValue(DayOfWeek.MONDAY);
+
+      TextField courseHourField = new TextField("16:00");
+      TextField coursePriceField = new TextField("0");
+
       CheckBox linkedToTeacherBox = new CheckBox("Link to current teacher");
       linkedToTeacherBox.setSelected(currentTeacher != null);
       linkedToTeacherBox.setDisable(currentTeacher == null);
@@ -63,14 +74,37 @@ public class AddStudentDialog extends Dialog<Student> {
       grid.add(new Label("Level:"), 0, 5);
       grid.add(levelBox, 1, 5);
 
-      grid.add(new Label("Student type:"), 0, 6);
-      grid.add(linkedToTeacherBox, 1, 6);
+      grid.add(new Label("Course day:"), 0, 6);
+      grid.add(courseDayBox, 1, 6);
+
+      grid.add(new Label("Course hour:"), 0, 7);
+      grid.add(courseHourField, 1, 7);
+
+      grid.add(new Label("Course price:"), 0, 8);
+      grid.add(coursePriceField, 1, 8);
+
+      grid.add(new Label("Student type:"), 0, 9);
+      grid.add(linkedToTeacherBox, 1, 9);
 
       getDialogPane().setContent(grid);
       getDialogPane().getButtonTypes().addAll(ButtonType.CANCEL, ButtonType.OK);
 
       setResultConverter(button -> {
          if (button == ButtonType.OK) {
+            LocalTime courseHour;
+            double coursePrice;
+
+            try {
+               courseHour = LocalTime.parse(courseHourField.getText().trim());
+               coursePrice = Double.parseDouble(coursePriceField.getText().trim());
+            } catch (DateTimeParseException exception) {
+               showError("Course hour must use HH:mm format, for example 16:00.");
+               return null;
+            } catch (NumberFormatException exception) {
+               showError("Course price must be a number.");
+               return null;
+            }
+
             return new Student(
                   firstNameField.getText(),
                   lastNameField.getText(),
@@ -80,10 +114,21 @@ public class AddStudentDialog extends Dialog<Student> {
                   levelBox.getValue(),
                   linkedToTeacherBox.isSelected() && currentTeacher != null
                         ? currentTeacher.getId()
-                        : null);
+                        : null,
+                  courseDayBox.getValue(),
+                  courseHour,
+                  coursePrice);
          }
 
          return null;
       });
+   }
+
+   private void showError(String message) {
+      Alert alert = new Alert(Alert.AlertType.ERROR);
+      alert.setTitle("Maestro");
+      alert.setHeaderText(null);
+      alert.setContentText(message);
+      alert.showAndWait();
    }
 }
