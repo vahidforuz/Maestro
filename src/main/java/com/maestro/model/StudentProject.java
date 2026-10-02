@@ -1,10 +1,15 @@
 package com.maestro.model;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
-public class StudentProject {
+public class StudentProject implements Serializable {
+   private static final long serialVersionUID = 1L;
+
+   private int id;
    private String name;
+   private int paidCourseCount;
    private final List<StudentCourse> courses = new ArrayList<>();
    private final List<String> pieces = new ArrayList<>();
 
@@ -16,12 +21,41 @@ public class StudentProject {
       return name;
    }
 
+   public int getId() {
+      return id;
+   }
+
+   public void setId(int id) {
+      this.id = id;
+   }
+
    public void setName(String name) {
       this.name = name;
    }
 
+   public int getPaidCourseCount() {
+      return paidCourseCount;
+   }
+
+   public void addPaidCourseCount(int paidCourseCount) {
+      this.paidCourseCount += Math.max(0, paidCourseCount);
+   }
+
+   public void setPaidCourseCount(int paidCourseCount) {
+      this.paidCourseCount = Math.max(0, paidCourseCount);
+   }
+
    public List<StudentCourse> getCourses() {
       return courses;
+   }
+
+   public StudentCourse findCourseById(int courseId) {
+      for (StudentCourse course : courses) {
+         if (course.getId() == courseId) {
+            return course;
+         }
+      }
+      return null;
    }
 
    public List<String> getPieces() {

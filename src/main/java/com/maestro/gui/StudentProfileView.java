@@ -6,17 +6,26 @@ import com.maestro.model.Payment;
 import com.maestro.model.Student;
 import com.maestro.model.StudentCourse;
 import com.maestro.model.StudentProject;
+import com.maestro.service.ReviewService;
+import com.maestro.service.ReviewService.DueReview;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.TemporalAdjusters;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
+import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
+import javafx.scene.control.Alert;
+import javafx.scene.control.ButtonBar;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.ScrollBar;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Separator;
 import javafx.scene.control.SplitPane;
@@ -37,8 +46,29 @@ public class StudentProfileView extends VBox {
    private static final double PREFERRED_COURSE_CARD_WIDTH = 560;
    private static final double MIN_PROJECTS_HEIGHT = 260;
    private static final double MIN_PAYMENTS_HEIGHT = 120;
+   private static final String COURSE_CARD_STYLE =
+         "-fx-border-color: #999999; -fx-border-radius: 4; -fx-background-radius: 4;";
+   private static final String SELECTED_COURSE_CARD_STYLE =
+         "-fx-border-color: #0f62fe; -fx-border-width: 3; -fx-border-radius: 4; "
+               + "-fx-background-color: #eef5ff; -fx-background-radius: 4;";
 
-   public StudentProfileView(Student student, List<Payment> payments, Runnable addPaymentAction) {
+   public StudentProfileView(
+         Student student,
+         List<Payment> payments,
+         Consumer<StudentProject> addPaymentAction,
+         Runnable saveStudentAction) {
+      this(student, payments, addPaymentAction, saveStudentAction, null, 0, 0);
+   }
+
+   public StudentProfileView(
+         Student student,
+         List<Payment> payments,
+         Consumer<StudentProject> addPaymentAction,
+         Runnable saveStudentAction,
+         ReviewService reviewService,
+         int initialProjectId,
+         int initialCourseId) {
+      student.ensureEntityIds();
       setSpacing(10);
       setPadding(new Insets(20));
       setFillWidth(true);
@@ -76,16 +106,21 @@ public class StudentProfileView extends VBox {
                   projects.get(index),
                   index,
                   payments,
-                  refreshProjects[0]));
+                  refreshProjects[0],
+                  saveStudentAction,
+                  reviewService,
+                  initialProjectId,
+                  initialCourseId));
          }
       };
 
       newProjectButton.setOnAction(event -> {
          student.addProject();
+         saveStudentAction.run();
          refreshProjects[0].run();
       });
 
-      VBox paymentsSection = createPaymentsSection(payments, addPaymentAction);
+      VBox paymentsSection = createPaymentsSection(student, payments, addPaymentAction);
       paymentsSection.setMinHeight(MIN_PAYMENTS_HEIGHT);
 
       VBox projectsSection = new VBox(8, projectsScroller, newProjectButton);
@@ -140,6 +175,7 @@ public class StudentProfileView extends VBox {
       addInfoRow(grid, 1, 2, "Course hour:", student.getCourseHour() == null ? "Not set" : student.getCourseHour().toString());
       addInfoRow(grid, 2, 2, "Course price:", String.valueOf(student.getCoursePrice()));
       addInfoRow(grid, 3, 2, "Payment status:", isPaid(student, payments) ? "Paid" : "Not paid");
+      addInfoRow(grid, 4, 2, "Credit balance:", String.valueOf(student.getPaymentCreditBalance()));
 
       return grid;
    }
@@ -162,7 +198,11 @@ public class StudentProfileView extends VBox {
          StudentProject project,
          int projectIndex,
          List<Payment> payments,
-         Runnable refreshProjects) {
+         Runnable refreshProjects,
+         Runnable saveStudentAction,
+         ReviewService reviewService,
+         int initialProjectId,
+         int initialCourseId) {
       VBox projectSection = new VBox(8);
       projectSection.setPadding(new Insets(10));
       projectSection.setMaxWidth(Double.MAX_VALUE);
@@ -188,9 +228,47 @@ public class StudentProfileView extends VBox {
       courseRow.setPadding(new Insets(0, 0, 8, 0));
 
       List<StudentCourse> projectCourses = project.getCourses();
+      List<Label> priceLeftLabels = new ArrayList<>();
+      List<VBox> courseBoxes = new ArrayList<>();
+      int[] selectedCourseId = {
+            project.getId() == initialProjectId && project.findCourseById(initialCourseId) != null
+                  ? initialCourseId
+                  : 0
+      };
+      Runnable refreshPriceLeftValues = () -> refreshPriceLeftLabels(priceLeftLabels, projectCourses, payments);
+      Runnable refreshSelection = () -> {
+         for (int boxIndex = 0; boxIndex < courseBoxes.size(); boxIndex++) {
+            StudentCourse rowCourse = projectCourses.get(boxIndex);
+            setCourseBoxSelected(courseBoxes.get(boxIndex), rowCourse.getId() == selectedCourseId[0]);
+         }
+         deleteCourseButton.setDisable(selectedCourseId[0] == 0 || student.getCourses().size() <= 1);
+      };
+      int selectedCourseIndex = -1;
       for (int index = 0; index < projectCourses.size(); index++) {
-         courseRow.getChildren().add(createCourseBox(student, project, projectCourses, projectCourses.get(index), index, payments));
+         StudentCourse rowCourse = projectCourses.get(index);
+         VBox courseBox = createCourseBox(
+               student,
+               project,
+               projectCourses,
+               rowCourse,
+               index,
+               payments,
+               priceLeftLabels,
+               refreshPriceLeftValues,
+               reviewService,
+               saveStudentAction);
+         courseBox.setOnMouseClicked(event -> {
+            selectedCourseId[0] = rowCourse.getId();
+            refreshSelection.run();
+         });
+         courseBoxes.add(courseBox);
+         courseRow.getChildren().add(courseBox);
+         if (rowCourse.getId() == selectedCourseId[0]) {
+            selectedCourseIndex = index;
+         }
       }
+      refreshPriceLeftValues.run();
+      refreshSelection.run();
 
       ScrollPane coursesScroller = new ScrollPane(courseRow);
       coursesScroller.setFitToHeight(true);
@@ -198,31 +276,93 @@ public class StudentProfileView extends VBox {
       coursesScroller.setMinViewportHeight(420);
       coursesScroller.setPrefViewportHeight(Region.USE_COMPUTED_SIZE);
       coursesScroller.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
-      coursesScroller.setHbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+      coursesScroller.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
       coursesScroller.setVbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
       coursesScroller.setPannable(true);
 
+      ScrollBar topCourseScroll = new ScrollBar();
+      topCourseScroll.setMin(0);
+      topCourseScroll.setMax(1);
+      topCourseScroll.setUnitIncrement(0.05);
+      topCourseScroll.setBlockIncrement(0.2);
+      topCourseScroll.valueProperty().bindBidirectional(coursesScroller.hvalueProperty());
+      Runnable updateTopCourseScroll = () -> {
+         double contentWidth = courseRow.getLayoutBounds().getWidth();
+         double viewportWidth = coursesScroller.getViewportBounds().getWidth();
+         boolean scrollNeeded = contentWidth > viewportWidth && viewportWidth > 0;
+         topCourseScroll.setDisable(!scrollNeeded);
+         topCourseScroll.setVisible(scrollNeeded);
+         topCourseScroll.setManaged(scrollNeeded);
+         topCourseScroll.setVisibleAmount(scrollNeeded ? viewportWidth / contentWidth : 1);
+      };
+      courseRow.layoutBoundsProperty().addListener((observable, oldValue, newValue) -> updateTopCourseScroll.run());
+      coursesScroller.viewportBoundsProperty().addListener((observable, oldValue, newValue) -> updateTopCourseScroll.run());
+      updateTopCourseScroll.run();
+      if (selectedCourseIndex >= 0) {
+         int courseIndexToShow = selectedCourseIndex;
+         Platform.runLater(() -> {
+            int lastCourseIndex = Math.max(1, projectCourses.size() - 1);
+            coursesScroller.setHvalue((double) courseIndexToShow / lastCourseIndex);
+         });
+      }
+
+      VBox coursesWithTopScroll = new VBox(4, topCourseScroll, coursesScroller);
+      coursesWithTopScroll.setMaxSize(Double.MAX_VALUE, Double.MAX_VALUE);
+
       newCourseButton.setOnAction(event -> {
          student.addCourseToProject(project);
+         saveStudentAction.run();
          refreshProjects.run();
       });
       deleteCourseButton.setOnAction(event -> {
-         if (!project.getCourses().isEmpty() && student.getCourses().size() > 1) {
-            student.removeCourse(project.getCourses().get(project.getCourses().size() - 1));
+         StudentCourse selectedCourse = findCourseInProject(project, selectedCourseId[0]);
+         if (selectedCourse != null && student.getCourses().size() > 1 && confirmDeleteCourse(project, selectedCourse)) {
+            student.removeCourse(selectedCourse);
+            saveStudentAction.run();
             refreshProjects.run();
          }
       });
       deleteProjectButton.setOnAction(event -> {
          student.removeProject(project);
+         saveStudentAction.run();
          refreshProjects.run();
       });
 
-      projectSection.getChildren().addAll(projectHeader, createPiecesSection(project, refreshProjects), new Separator(), coursesScroller);
-      VBox.setVgrow(coursesScroller, Priority.NEVER);
+      projectSection.getChildren().addAll(
+            projectHeader,
+            createPiecesSection(project, refreshProjects, saveStudentAction),
+            new Separator(),
+            coursesWithTopScroll);
+      VBox.setVgrow(coursesWithTopScroll, Priority.NEVER);
       return projectSection;
    }
 
-   private VBox createPiecesSection(StudentProject project, Runnable refreshProjects) {
+   private StudentCourse findCourseInProject(StudentProject project, int courseId) {
+      for (StudentCourse course : project.getCourses()) {
+         if (course.getId() == courseId) {
+            return course;
+         }
+      }
+      return null;
+   }
+
+   private boolean confirmDeleteCourse(StudentProject project, StudentCourse course) {
+      int courseIndex = project.getCourses().indexOf(course) + 1;
+      Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+      alert.setTitle("Delete Course");
+      alert.setHeaderText("Delete Course " + courseIndex + "?");
+      alert.setContentText("Date: " + (course.getDate() == null ? "Not set" : course.getDate()));
+
+      ButtonType deleteType = new ButtonType("Delete", ButtonBar.ButtonData.OK_DONE);
+      alert.getButtonTypes().setAll(ButtonType.CANCEL, deleteType);
+      return alert.showAndWait().orElse(ButtonType.CANCEL) == deleteType;
+   }
+
+   private void setCourseBoxSelected(VBox courseBox, boolean selected) {
+      courseBox.setStyle(selected ? SELECTED_COURSE_CARD_STYLE : COURSE_CARD_STYLE);
+   }
+
+   private VBox createPiecesSection(StudentProject project, Runnable refreshProjects, Runnable saveStudentAction) {
       VBox piecesSection = new VBox(6);
       piecesSection.setFillWidth(true);
       piecesSection.setMaxWidth(Double.MAX_VALUE);
@@ -245,6 +385,7 @@ public class StudentProfileView extends VBox {
          String pieceName = newPieceField.getText() == null ? "" : newPieceField.getText().trim();
          if (!pieceName.isEmpty()) {
             project.addPiece(pieceName);
+            saveStudentAction.run();
             refreshProjects.run();
          }
       });
@@ -254,13 +395,17 @@ public class StudentProfileView extends VBox {
 
       List<String> pieces = project.getPieces();
       for (int index = 0; index < pieces.size(); index++) {
-         piecesSection.getChildren().add(createPieceRow(project, index, refreshProjects));
+         piecesSection.getChildren().add(createPieceRow(project, index, refreshProjects, saveStudentAction));
       }
 
       return piecesSection;
    }
 
-   private HBox createPieceRow(StudentProject project, int pieceIndex, Runnable refreshProjects) {
+   private HBox createPieceRow(
+         StudentProject project,
+         int pieceIndex,
+         Runnable refreshProjects,
+         Runnable saveStudentAction) {
       Label pieceLabel = new Label(project.getPieces().get(pieceIndex));
       pieceLabel.setMaxWidth(Double.MAX_VALUE);
       pieceLabel.setWrapText(true);
@@ -280,24 +425,26 @@ public class StudentProfileView extends VBox {
          dialog.showAndWait().ifPresent(pieceName -> {
             if (!pieceName.trim().isEmpty()) {
                project.setPiece(pieceIndex, pieceName.trim());
+               saveStudentAction.run();
                refreshProjects.run();
             }
          });
       });
       deleteButton.setOnAction(event -> {
          project.removePiece(pieceIndex);
+         saveStudentAction.run();
          refreshProjects.run();
       });
 
       return pieceRow;
    }
 
-   private VBox createPaymentsSection(List<Payment> payments, Runnable addPaymentAction) {
+   private VBox createPaymentsSection(Student student, List<Payment> payments, Consumer<StudentProject> addPaymentAction) {
       Label paymentsTitle = new Label("Payments");
       paymentsTitle.setStyle("-fx-font-weight: bold;");
 
       Button addPaymentButton = new Button("Add Payment");
-      addPaymentButton.setOnAction(event -> addPaymentAction.run());
+      addPaymentButton.setOnAction(event -> addPaymentAction.accept(student.getCurrentProject()));
 
       HBox paymentHeader = new HBox(10, paymentsTitle, addPaymentButton);
       paymentHeader.setAlignment(Pos.CENTER_LEFT);
@@ -336,10 +483,14 @@ public class StudentProfileView extends VBox {
          List<StudentCourse> projectCourses,
          StudentCourse course,
          int courseIndex,
-         List<Payment> payments) {
+         List<Payment> payments,
+         List<Label> priceLeftLabels,
+         Runnable refreshPriceLeftValues,
+         ReviewService reviewService,
+         Runnable saveStudentAction) {
       VBox courseBox = new VBox(10);
       courseBox.setPadding(new Insets(12));
-      courseBox.setStyle("-fx-border-color: #999999; -fx-border-radius: 4; -fx-background-radius: 4;");
+      courseBox.setStyle(COURSE_CARD_STYLE);
       courseBox.setMinWidth(MIN_COURSE_CARD_WIDTH);
       courseBox.setPrefWidth(PREFERRED_COURSE_CARD_WIDTH);
       courseBox.setMaxWidth(PREFERRED_COURSE_CARD_WIDTH);
@@ -369,14 +520,17 @@ public class StudentProfileView extends VBox {
       dayBox.setValue(course.getDay());
       dayBox.setMaxWidth(Double.MAX_VALUE);
 
-      Label dateValue = new Label(formatCourseDate(course.getDay()));
+      ensureCourseDate(course);
+      Label dateValue = new Label(formatCourseDate(course));
       dateValue.setMaxWidth(Double.MAX_VALUE);
       dateValue.setWrapText(true);
 
       dayBox.valueProperty().addListener((observable, oldValue, newValue) -> {
          course.setDay(newValue);
-         dateValue.setText(formatCourseDate(newValue));
+         course.setDate(firstDateForDay(newValue));
+         dateValue.setText(formatCourseDate(course));
          updateNoteReviewDates(course);
+         saveStudentAction.run();
       });
 
       TextField hourField = new TextField(course.getHour() == null ? "" : course.getHour().toString());
@@ -384,6 +538,7 @@ public class StudentProfileView extends VBox {
       hourField.textProperty().addListener((observable, oldValue, newValue) -> {
          try {
             course.setHour(newValue == null || newValue.isBlank() ? null : LocalTime.parse(newValue.trim()));
+            saveStudentAction.run();
          } catch (DateTimeParseException exception) {
             // Keep the last valid value while the user is typing.
          }
@@ -392,15 +547,17 @@ public class StudentProfileView extends VBox {
       TextField priceField = new TextField(String.valueOf(course.getPrice()));
       priceField.setMaxWidth(Double.MAX_VALUE);
 
-      Label priceLeftValue = new Label(String.valueOf(getPriceLeft(projectCourses, payments, courseIndex)));
+      Label priceLeftValue = new Label(String.valueOf(getPriceLeft(projectCourses, payments)));
       priceLeftValue.setMaxWidth(Double.MAX_VALUE);
+      priceLeftLabels.add(priceLeftValue);
 
       priceField.textProperty().addListener((observable, oldValue, newValue) -> {
          try {
             course.setPrice(Double.parseDouble(newValue.trim()));
-            priceLeftValue.setText(String.valueOf(getPriceLeft(projectCourses, payments, courseIndex)));
+            refreshPriceLeftValues.run();
+            saveStudentAction.run();
          } catch (NumberFormatException exception) {
-            priceLeftValue.setText(String.valueOf(getPriceLeft(projectCourses, payments, courseIndex)));
+            refreshPriceLeftValues.run();
          }
       });
 
@@ -410,7 +567,8 @@ public class StudentProfileView extends VBox {
       statusBox.setMaxWidth(Double.MAX_VALUE);
       statusBox.valueProperty().addListener((observable, oldValue, newValue) -> {
          course.setStatus(newValue);
-         priceLeftValue.setText(String.valueOf(getPriceLeft(projectCourses, payments, courseIndex)));
+         refreshPriceLeftValues.run();
+         saveStudentAction.run();
       });
 
       TextArea commentArea = new TextArea(course.getComment());
@@ -419,7 +577,10 @@ public class StudentProfileView extends VBox {
       commentArea.setMaxWidth(Double.MAX_VALUE);
       commentArea.setWrapText(true);
       commentArea.textProperty().addListener((observable, oldValue, newValue) ->
-            course.setComment(newValue));
+            {
+               course.setComment(newValue);
+               saveStudentAction.run();
+            });
 
       TextArea homeworkArea = new TextArea(course.getHomeworkNextLesson());
       homeworkArea.setPrefRowCount(3);
@@ -427,7 +588,10 @@ public class StudentProfileView extends VBox {
       homeworkArea.setMaxWidth(Double.MAX_VALUE);
       homeworkArea.setWrapText(true);
       homeworkArea.textProperty().addListener((observable, oldValue, newValue) ->
-            course.setHomeworkNextLesson(newValue));
+            {
+               course.setHomeworkNextLesson(newValue);
+               saveStudentAction.run();
+            });
 
       addCourseRow(courseGrid, 0, "Day:", dayBox);
       addCourseRow(courseGrid, 1, "Date:", dateValue);
@@ -438,11 +602,16 @@ public class StudentProfileView extends VBox {
       addCourseRow(courseGrid, 6, "Homework / Next Lesson:", homeworkArea);
       addCourseRow(courseGrid, 7, "Description:", commentArea);
 
-      courseBox.getChildren().addAll(courseTitle, courseGrid, createNotesSection(project, course));
+      courseBox.getChildren().addAll(courseTitle, courseGrid, createNotesSection(student, project, course, reviewService, saveStudentAction));
       return courseBox;
    }
 
-   private VBox createNotesSection(StudentProject project, StudentCourse course) {
+   private VBox createNotesSection(
+         Student student,
+         StudentProject project,
+         StudentCourse course,
+         ReviewService reviewService,
+         Runnable saveStudentAction) {
       VBox notesSection = new VBox(8);
       notesSection.setFillWidth(true);
       notesSection.setMaxWidth(Double.MAX_VALUE);
@@ -457,7 +626,7 @@ public class StudentProfileView extends VBox {
       refreshNotes[0] = () -> {
          noteRows.getChildren().clear();
          for (CourseNote note : course.getNotes()) {
-            noteRows.getChildren().add(createNoteBox(project, course, note, refreshNotes[0]));
+            noteRows.getChildren().add(createNoteBox(project, course, note, refreshNotes[0], saveStudentAction));
          }
       };
 
@@ -466,20 +635,101 @@ public class StudentProfileView extends VBox {
       addNoteButton.setOnAction(event -> {
          String piece = project.getPieces().isEmpty() ? "" : project.getPieces().get(0);
          CourseNote note = course.addNote(piece);
-         note.setReviewSchedule(1, getCourseDate(course));
+         note.setSourceCourseId(course.getId());
+         saveStudentAction.run();
          refreshNotes[0].run();
       });
 
+      VBox dueReviewsSection = createDueReviewsSection(student, course, reviewService, refreshNotes[0]);
+
       refreshNotes[0].run();
-      notesSection.getChildren().addAll(new Separator(), notesTitle, noteRows, addNoteButton);
+      notesSection.getChildren().addAll(dueReviewsSection, new Separator(), notesTitle, noteRows, addNoteButton);
       return notesSection;
+   }
+
+   private VBox createDueReviewsSection(
+         Student student,
+         StudentCourse course,
+         ReviewService reviewService,
+         Runnable refreshNotes) {
+      VBox reviewSection = new VBox(8);
+      reviewSection.setFillWidth(true);
+      reviewSection.setMaxWidth(Double.MAX_VALUE);
+
+      Label reviewTitle = new Label("Notes to Review");
+      reviewTitle.setStyle("-fx-font-weight: bold;");
+
+      VBox reviewRows = new VBox(8);
+      reviewRows.setFillWidth(true);
+
+      Runnable[] refreshReviews = new Runnable[1];
+      refreshReviews[0] = () -> {
+         reviewRows.getChildren().clear();
+         if (reviewService == null) {
+            return;
+         }
+
+         for (DueReview dueReview : reviewService.getDueReviews(student, course)) {
+            reviewRows.getChildren().add(createDueReviewBox(
+                  student,
+                  course,
+                  dueReview,
+                  reviewService,
+                  refreshReviews[0],
+                  refreshNotes));
+         }
+      };
+
+      refreshReviews[0].run();
+      reviewSection.getChildren().addAll(new Separator(), reviewTitle, reviewRows);
+      return reviewSection;
+   }
+
+   private VBox createDueReviewBox(
+         Student student,
+         StudentCourse course,
+         DueReview dueReview,
+         ReviewService reviewService,
+         Runnable refreshReviews,
+         Runnable refreshNotes) {
+      CourseNote note = dueReview.note();
+      VBox reviewBox = new VBox(6);
+      reviewBox.setPadding(new Insets(8));
+      reviewBox.setMaxWidth(Double.MAX_VALUE);
+      reviewBox.setStyle("-fx-border-color: #9a9a9a; -fx-border-radius: 4; -fx-background-radius: 4;");
+
+      Label fromLabel = new Label("From: " + formatReviewDate(dueReview.sourceCourseDate()));
+      Label pieceLabel = new Label("Piece: " + note.getPiece());
+      Label commentLabel = new Label("Comment: " + note.getComment());
+      fromLabel.setWrapText(true);
+      pieceLabel.setWrapText(true);
+      commentLabel.setWrapText(true);
+
+      Button addButton = new Button("Add to This Course");
+      addButton.setOnAction(event -> {
+         reviewService.acceptReview(student, course, note);
+         refreshNotes.run();
+         refreshReviews.run();
+      });
+
+      Button dismissButton = new Button("Dismiss");
+      dismissButton.setOnAction(event -> {
+         reviewService.dismissReview(student, note);
+         refreshReviews.run();
+      });
+
+      HBox actions = new HBox(8, addButton, dismissButton);
+      actions.setAlignment(Pos.CENTER_LEFT);
+      reviewBox.getChildren().addAll(fromLabel, pieceLabel, commentLabel, actions);
+      return reviewBox;
    }
 
    private VBox createNoteBox(
          StudentProject project,
          StudentCourse course,
          CourseNote note,
-         Runnable refreshNotes) {
+         Runnable refreshNotes,
+         Runnable saveStudentAction) {
       VBox noteBox = new VBox(8);
       noteBox.setPadding(new Insets(8));
       noteBox.setMaxWidth(Double.MAX_VALUE);
@@ -506,14 +756,20 @@ public class StudentProfileView extends VBox {
             : note.getPiece());
       note.setPiece(pieceBox.getValue() == null ? "" : pieceBox.getValue());
       pieceBox.setMaxWidth(Double.MAX_VALUE);
-      pieceBox.valueProperty().addListener((observable, oldValue, newValue) -> note.setPiece(newValue));
+      pieceBox.valueProperty().addListener((observable, oldValue, newValue) -> {
+         note.setPiece(newValue);
+         saveStudentAction.run();
+      });
 
       TextArea commentArea = new TextArea(note.getComment());
       commentArea.setPrefRowCount(3);
       commentArea.setMinHeight(70);
       commentArea.setMaxWidth(Double.MAX_VALUE);
       commentArea.setWrapText(true);
-      commentArea.textProperty().addListener((observable, oldValue, newValue) -> note.setComment(newValue));
+      commentArea.textProperty().addListener((observable, oldValue, newValue) -> {
+         note.setComment(newValue);
+         saveStudentAction.run();
+      });
 
       ComboBox<ReviewOption> reviewBox = new ComboBox<>();
       reviewBox.getItems().addAll(ReviewOption.values());
@@ -524,15 +780,39 @@ public class StudentProfileView extends VBox {
       reviewDateLabel.setMaxWidth(Double.MAX_VALUE);
       reviewDateLabel.setWrapText(true);
 
+      Button showInReviewWeekButton = new Button("Show in Review Week");
+      showInReviewWeekButton.setDisable(reviewBox.getValue() == ReviewOption.NO_REVIEW);
+
       reviewBox.valueProperty().addListener((observable, oldValue, newValue) -> {
          ReviewOption selected = newValue == null ? ReviewOption.NO_REVIEW : newValue;
-         note.setReviewSchedule(selected.weeks(), getCourseDate(course));
+         note.setSourceCourseId(course.getId());
+         note.setReviewData(
+               selected.weeks(),
+               selected.weeks() == null || getCourseDate(course) == null
+                     ? null
+                     : getCourseDate(course).plusWeeks(selected.weeks()),
+               note.getReviewStatus(),
+               note.getSourceCourseId(),
+               note.getAcceptedCourseId());
          reviewDateLabel.setText(formatReviewDate(note.getReviewDate()));
+         showInReviewWeekButton.setDisable(selected == ReviewOption.NO_REVIEW);
+         saveStudentAction.run();
+      });
+
+      showInReviewWeekButton.setOnAction(event -> {
+         ReviewOption selected = reviewBox.getValue() == null ? ReviewOption.NO_REVIEW : reviewBox.getValue();
+         if (selected != ReviewOption.NO_REVIEW) {
+            note.setSourceCourseId(course.getId());
+            note.setReviewSchedule(selected.weeks(), getCourseDate(course));
+            reviewDateLabel.setText(formatReviewDate(note.getReviewDate()));
+            saveStudentAction.run();
+         }
       });
 
       Button deleteButton = new Button("Delete Note");
       deleteButton.setOnAction(event -> {
          course.removeNote(note);
+         saveStudentAction.run();
          refreshNotes.run();
       });
 
@@ -541,7 +821,7 @@ public class StudentProfileView extends VBox {
       addCourseRow(noteGrid, 2, "Review:", reviewBox);
       addCourseRow(noteGrid, 3, "Review Date:", reviewDateLabel);
 
-      HBox actions = new HBox(deleteButton);
+      HBox actions = new HBox(8, showInReviewWeekButton, deleteButton);
       actions.setAlignment(Pos.CENTER_RIGHT);
 
       noteBox.getChildren().addAll(noteGrid, actions);
@@ -562,12 +842,16 @@ public class StudentProfileView extends VBox {
       return getTotalPaid(payments) >= student.getCoursePrice();
    }
 
-   private double getPriceLeft(List<StudentCourse> courses, List<Payment> payments, int courseIndex) {
-      double totalPaid = getTotalPaid(payments);
-      int lastIndex = Math.min(courseIndex, courses.size() - 1);
+   private void refreshPriceLeftLabels(List<Label> priceLeftLabels, List<StudentCourse> courses, List<Payment> payments) {
+      String priceLeft = String.valueOf(getPriceLeft(courses, payments));
+      for (Label priceLeftLabel : priceLeftLabels) {
+         priceLeftLabel.setText(priceLeft);
+      }
+   }
 
-      for (int index = 0; index <= lastIndex; index++) {
-         StudentCourse course = courses.get(index);
+   private double getPriceLeft(List<StudentCourse> courses, List<Payment> payments) {
+      double totalPaid = getTotalPaid(payments);
+      for (StudentCourse course : courses) {
          if (doesConsumeCourse(course.getStatus())) {
             totalPaid -= course.getPrice();
          }
@@ -589,20 +873,17 @@ public class StudentProfileView extends VBox {
       return status == LessonStatus.PRESENT || status == LessonStatus.ABSENT;
    }
 
-   private String formatCourseDate(DayOfWeek day) {
-      if (day == null) {
+   private String formatCourseDate(StudentCourse course) {
+      if (course.getDate() == null) {
          return "Not set";
       }
 
-      return LocalDate.now().with(TemporalAdjusters.nextOrSame(day)).toString();
+      return course.getDate().toString();
    }
 
    private LocalDate getCourseDate(StudentCourse course) {
-      if (course.getDay() == null) {
-         return null;
-      }
-
-      return LocalDate.now().with(TemporalAdjusters.nextOrSame(course.getDay()));
+      ensureCourseDate(course);
+      return course.getDate();
    }
 
    private void updateNoteReviewDates(StudentCourse course) {
@@ -614,6 +895,20 @@ public class StudentProfileView extends VBox {
 
    private String formatReviewDate(LocalDate reviewDate) {
       return reviewDate == null ? "No review" : reviewDate.toString();
+   }
+
+   private void ensureCourseDate(StudentCourse course) {
+      if (course.getDate() == null && course.getDay() != null) {
+         course.setDate(firstDateForDay(course.getDay()));
+      }
+   }
+
+   private LocalDate firstDateForDay(DayOfWeek day) {
+      if (day == null) {
+         return null;
+      }
+
+      return LocalDate.now().with(TemporalAdjusters.nextOrSame(day));
    }
 
    private enum ReviewOption {

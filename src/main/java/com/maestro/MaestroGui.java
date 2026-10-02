@@ -5,17 +5,26 @@ import com.maestro.gui.MaestroCalendarView;
 import com.maestro.gui.StudentProfileView;
 import com.maestro.gui.TeacherAccountDialog;
 import com.maestro.gui.TeacherProfileView;
+import com.maestro.database.DatabaseInitializer;
+import com.maestro.database.LegacyDataMigrator;
+import com.maestro.database.SQLiteDatabaseProvider;
 import com.maestro.model.LessonStatus;
 import com.maestro.model.Payment;
 import com.maestro.model.Student;
 import com.maestro.model.StudentCourse;
+import com.maestro.model.StudentProject;
 import com.maestro.model.Teacher;
 import com.maestro.service.StudentService;
 import com.maestro.service.StudentServiceImpl;
 import com.maestro.service.PaymentService;
 import com.maestro.service.PaymentServiceImpl;
+import com.maestro.service.ReviewService;
+import com.maestro.service.ReviewServiceImpl;
 import com.maestro.service.TeacherService;
 import com.maestro.service.TeacherServiceImpl;
+import com.maestro.repository.RepositoryFactory;
+import com.maestro.repository.sqlite.SQLiteRepositoryFactory;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -46,12 +55,30 @@ import javafx.stage.Stage;
 public class MaestroGui extends Application {
 
    private VBox mainContent;
-   private final TeacherService teacherService = new TeacherServiceImpl();
-   private final StudentService studentService = new StudentServiceImpl();
-   private final PaymentService paymentService = new PaymentServiceImpl();
+   private final SQLiteDatabaseProvider databaseProvider = new SQLiteDatabaseProvider(Path.of("data", "music_school.db"));
+   private final RepositoryFactory repositoryFactory = createRepositoryFactory();
+   private final TeacherService teacherService = new TeacherServiceImpl(repositoryFactory.teachers());
+   private final StudentService studentService = new StudentServiceImpl(repositoryFactory.students());
+   private final PaymentService paymentService = new PaymentServiceImpl(
+         repositoryFactory.payments(),
+         repositoryFactory.students(),
+         repositoryFactory.transactionManager());
+   private final ReviewService reviewService = new ReviewServiceImpl(repositoryFactory.students());
    private Teacher currentTeacher;
    private int nextTeacherId = 1;
    private int nextStudentId = 1;
+
+   private RepositoryFactory createRepositoryFactory() {
+      new DatabaseInitializer(databaseProvider).initialize();
+      RepositoryFactory factory = new SQLiteRepositoryFactory(databaseProvider);
+      new LegacyDataMigrator(
+            databaseProvider,
+            factory.transactionManager(),
+            factory.teachers(),
+            factory.students(),
+            factory.payments()).migrateIfNeeded();
+      return factory;
+   }
 
    @Override
    public void start(Stage stage) {
@@ -78,6 +105,7 @@ public class MaestroGui extends Application {
       stage.show();
 
       updateNextTeacherId();
+      updateNextStudentId();
       showWelcomeView();
    }
 
@@ -153,6 +181,17 @@ public class MaestroGui extends Application {
       }
 
       nextTeacherId = highestTeacherId + 1;
+   }
+
+   private void updateNextStudentId() {
+      int highestStudentId = 0;
+      for (Student student : studentService.getAllStudents()) {
+         if (student.getId() > highestStudentId) {
+            highestStudentId = student.getId();
+         }
+      }
+
+      nextStudentId = highestStudentId + 1;
    }
 
    private void signInTeacher() {
@@ -288,7 +327,12 @@ public class MaestroGui extends Application {
          return;
       }
 
-      Pane calendarView = new MaestroCalendarView(currentTeacher, studentService.getAllStudents(), paymentService);
+      Pane calendarView = new MaestroCalendarView(
+            currentTeacher,
+            studentService.getAllStudents(),
+            paymentService,
+            selection -> showStudentProfile(selection.student(), selection.projectId(), selection.courseId()),
+            studentService::saveStudents);
       VBox.setVgrow(calendarView, Priority.ALWAYS);
       Button backButton = new Button("Back to Dashboard");
       backButton.setOnAction(event -> showTeacherDashboard());
@@ -297,8 +341,19 @@ public class MaestroGui extends Application {
    }
 
    private void showStudentProfile(Student student) {
+      showStudentProfile(student, 0, 0);
+   }
+
+   private void showStudentProfile(Student student, int selectedProjectId, int selectedCourseId) {
       List<Payment> payments = paymentService.getPaymentsByStudent(student);
-      Pane profileView = new StudentProfileView(student, payments, () -> addPaymentForStudent(student));
+      Pane profileView = new StudentProfileView(
+            student,
+            payments,
+            project -> addPaymentForStudent(student, project),
+            studentService::saveStudents,
+            reviewService,
+            selectedProjectId,
+            selectedCourseId);
       VBox.setVgrow(profileView, Priority.ALWAYS);
       Button backButton = new Button("Back to Dashboard");
       backButton.setOnAction(event -> showTeacherDashboard());
@@ -306,7 +361,7 @@ public class MaestroGui extends Application {
       mainContent.getChildren().setAll(profileView, backButton);
    }
 
-   private void addPaymentForStudent(Student student) {
+   private void addPaymentForStudent(Student student, StudentProject project) {
       Dialog<Payment> dialog = new Dialog<>();
       dialog.setTitle("Add Payment");
       dialog.setHeaderText(null);
@@ -361,7 +416,7 @@ public class MaestroGui extends Application {
 
       Optional<Payment> payment = dialog.showAndWait();
       payment.ifPresent(createdPayment -> {
-         paymentService.addPayment(createdPayment);
+         paymentService.addPayment(createdPayment, project);
          showStudentProfile(student);
       });
    }

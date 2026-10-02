@@ -8,6 +8,10 @@ public interface StudentService {
   void addStudent(Student student);
 
   List<Student> getAllStudents();
+
+  Student findStudentById(int id);
+
+  void saveStudents();
 /*
   Student findStudentById(int id);
 

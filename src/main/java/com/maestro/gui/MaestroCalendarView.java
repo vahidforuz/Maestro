@@ -7,27 +7,31 @@ import com.calendarfx.view.CalendarView;
 import com.maestro.model.LessonStatus;
 import com.maestro.model.Student;
 import com.maestro.model.StudentCourse;
+import com.maestro.model.StudentProject;
 import com.maestro.model.Teacher;
 import com.maestro.service.PaymentService;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.List;
-import javafx.geometry.Insets;
-import javafx.scene.control.ButtonType;
-import javafx.scene.control.ComboBox;
-import javafx.scene.control.Dialog;
-import javafx.scene.control.Label;
-import javafx.scene.control.TextArea;
-import javafx.scene.layout.GridPane;
+import java.util.function.Consumer;
 import javafx.scene.layout.BorderPane;
 
 public class MaestroCalendarView extends BorderPane {
 
    private final PaymentService paymentService;
+   private final Consumer<CourseSelection> openCourseAction;
+   private final Runnable saveStudentsAction;
 
-   public MaestroCalendarView(Teacher teacher, List<Student> students, PaymentService paymentService) {
+   public MaestroCalendarView(
+         Teacher teacher,
+         List<Student> students,
+         PaymentService paymentService,
+         Consumer<CourseSelection> openCourseAction,
+         Runnable saveStudentsAction) {
       this.paymentService = paymentService;
+      this.openCourseAction = openCourseAction;
+      this.saveStudentsAction = saveStudentsAction;
 
       CalendarView calendarView = new CalendarView();
       calendarView.setShowAddCalendarButton(false);
@@ -38,8 +42,10 @@ public class MaestroCalendarView extends BorderPane {
          Object userObject = entry.getUserObject();
 
          if (userObject instanceof CourseEntry courseEntry) {
-            showCourseDialog(courseEntry, entry);
-            calendarView.refreshData();
+            openCourseAction.accept(new CourseSelection(
+                  courseEntry.student(),
+                  courseEntry.project().getId(),
+                  courseEntry.course().getId()));
             return true;
          }
 
@@ -73,35 +79,48 @@ public class MaestroCalendarView extends BorderPane {
             continue;
          }
 
-         for (StudentCourse course : student.getCourses()) {
-            LocalDate lessonDate = getNextLessonDate(course, lessonIndex);
-            LocalTime lessonStart = course.getHour() == null
-                  ? LocalTime.of(16, 0).plusHours(lessonIndex % 3)
-                  : course.getHour();
-            LocalTime lessonEnd = lessonStart.plusMinutes(45);
-            CourseEntry courseEntry = new CourseEntry(student, course);
+         student.ensureEntityIds();
+         for (StudentProject project : student.getProjects()) {
+            for (StudentCourse course : project.getCourses()) {
+               LocalDate lessonDate = getNextLessonDate(course, lessonIndex);
+               LocalTime lessonStart = course.getHour() == null
+                     ? LocalTime.of(16, 0).plusHours(lessonIndex % 3)
+                     : course.getHour();
+               LocalTime lessonEnd = lessonStart.plusMinutes(45);
+               CourseEntry courseEntry = new CourseEntry(student, project, course);
 
-            Entry<CourseEntry> lesson = new Entry<>(buildLessonTitle(courseEntry));
-            lesson.setInterval(lessonDate, lessonStart, lessonDate, lessonEnd);
-            lesson.setLocation(buildLessonLocation(courseEntry));
-            lesson.setUserObject(courseEntry);
-            lesson.startDateProperty().addListener((observable, oldValue, newValue) ->
-                  course.setDay(newValue.getDayOfWeek()));
-            lesson.startTimeProperty().addListener((observable, oldValue, newValue) ->
-                  course.setHour(newValue));
-            lessons.addEntry(lesson);
+               Entry<CourseEntry> lesson = new Entry<>(buildLessonTitle(courseEntry));
+               lesson.setInterval(lessonDate, lessonStart, lessonDate, lessonEnd);
+               lesson.setLocation(buildLessonLocation(courseEntry));
+               lesson.setUserObject(courseEntry);
+               lesson.startDateProperty().addListener((observable, oldValue, newValue) -> {
+                  course.setDate(newValue);
+                  saveStudentsAction.run();
+               });
+               lesson.startTimeProperty().addListener((observable, oldValue, newValue) -> {
+                  course.setHour(newValue);
+                  saveStudentsAction.run();
+               });
+               lessons.addEntry(lesson);
 
-            lessonIndex++;
+               lessonIndex++;
+            }
          }
       }
    }
 
    private LocalDate getNextLessonDate(StudentCourse course, int lessonIndex) {
+      if (course.getDate() != null) {
+         return course.getDate();
+      }
+
       if (course.getDay() == null) {
          return LocalDate.now().plusDays(lessonIndex + 1L);
       }
 
-      return LocalDate.now().with(TemporalAdjusters.nextOrSame(course.getDay()));
+      LocalDate lessonDate = LocalDate.now().with(TemporalAdjusters.nextOrSame(course.getDay()));
+      course.setDate(lessonDate);
+      return lessonDate;
    }
 
    private String buildLessonTitle(CourseEntry courseEntry) {
@@ -123,52 +142,6 @@ public class MaestroCalendarView extends BorderPane {
       return "Maestro - " + paymentStatus + " - " + courseEntry.course().getStatus();
    }
 
-   private void showCourseDialog(CourseEntry courseEntry, Entry<?> entry) {
-      Student student = courseEntry.student();
-      StudentCourse course = courseEntry.course();
-      Dialog<Boolean> dialog = new Dialog<>();
-      dialog.setTitle(course.getTitle());
-      dialog.setHeaderText(student.getName());
-
-      ComboBox<LessonStatus> statusBox = new ComboBox<>();
-      statusBox.getItems().addAll(LessonStatus.values());
-      statusBox.setValue(course.getStatus());
-
-      TextArea assignmentArea = new TextArea(course.getAssignment());
-      assignmentArea.setPrefRowCount(3);
-      assignmentArea.setWrapText(true);
-
-      TextArea commentArea = new TextArea(course.getComment());
-      commentArea.setPrefRowCount(3);
-      commentArea.setWrapText(true);
-
-      GridPane grid = new GridPane();
-      grid.setHgap(10);
-      grid.setVgap(10);
-      grid.setPadding(new Insets(20));
-
-      grid.add(new Label("Status:"), 0, 0);
-      grid.add(statusBox, 1, 0);
-      grid.add(new Label("Assignment:"), 0, 1);
-      grid.add(assignmentArea, 1, 1);
-      grid.add(new Label("Comment:"), 0, 2);
-      grid.add(commentArea, 1, 2);
-
-      dialog.getDialogPane().setContent(grid);
-      dialog.getDialogPane().getButtonTypes().addAll(ButtonType.CANCEL, ButtonType.OK);
-      dialog.setResultConverter(button -> button == ButtonType.OK);
-
-      dialog.showAndWait().ifPresent(confirmed -> {
-         if (confirmed) {
-            course.setStatus(statusBox.getValue());
-            course.setAssignment(assignmentArea.getText());
-            course.setComment(commentArea.getText());
-            entry.setTitle(buildLessonTitle(courseEntry));
-            entry.setLocation(buildLessonLocation(courseEntry));
-         }
-      });
-   }
-
    private boolean isPaid(CourseEntry courseEntry) {
       return courseEntry.course().getPrice() > 0
             && paymentService.getTotalPaidByStudent(courseEntry.student()) >= courseEntry.course().getPrice();
@@ -185,6 +158,9 @@ public class MaestroCalendarView extends BorderPane {
       reminders.addEntry(planning);
    }
 
-   private record CourseEntry(Student student, StudentCourse course) {
+   public record CourseSelection(Student student, int projectId, int courseId) {
+   }
+
+   private record CourseEntry(Student student, StudentProject project, StudentCourse course) {
    }
 }

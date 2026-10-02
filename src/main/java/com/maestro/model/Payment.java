@@ -1,8 +1,12 @@
 package com.maestro.model;
 
+import java.io.Serializable;
 import java.time.LocalDate;
 
-public class Payment {
+public class Payment implements Serializable {
+   private static final long serialVersionUID = 1L;
+
+   private int id;
    private Student student;
    private double amount;
    private LocalDate paymentDate;
@@ -20,6 +24,14 @@ public class Payment {
 
     public Student getStudent() {
       return student;
+    }
+
+    public int getId() {
+      return id;
+    }
+
+    public void setId(int id) {
+      this.id = id;
     }
 
     public void setStudent(Student student) {

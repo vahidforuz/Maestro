@@ -1,12 +1,18 @@
 package com.maestro.model;
 
+import java.io.Serializable;
 import java.time.LocalDate;
 import java.time.DayOfWeek;
 import java.time.LocalTime;
+import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
-public class Student {
+public class Student implements Serializable {
+  private static final long serialVersionUID = 1L;
+
   private int id;
   private String name;
   private String firstName;
@@ -25,6 +31,9 @@ public class Student {
   private LessonStatus firstCourseStatus = LessonStatus.NOTHING;
   private String nextWeekAssignment = "";
   private String thisWeekComment = "";
+  private double paymentCreditBalance;
+  private int nextProjectId = 1;
+  private int nextCourseId = 1;
   private final List<StudentCourse> courses = new ArrayList<>();
   private final List<StudentProject> projects = new ArrayList<>();
 
@@ -264,15 +273,28 @@ public class Student {
 
   public StudentCourse addCourseToProject(StudentProject project) {
     ensureFirstCourse();
+    ensureEntityIds();
     StudentCourse firstCourse = courses.get(0);
+    LocalDate courseDate = findNextCourseDate(firstCourse.getDay());
     StudentCourse course = new StudentCourse(
         "Course " + (project.getCourses().size() + 1),
         firstCourse.getDay(),
+        courseDate,
         firstCourse.getHour(),
         firstCourse.getPrice());
+    course.setId(nextCourseId++);
     courses.add(course);
     project.getCourses().add(course);
     return course;
+  }
+
+  public List<StudentCourse> addPaidCoursesToProject(StudentProject project, int numberOfCourses) {
+    ensureFirstCourse();
+    List<StudentCourse> addedCourses = new ArrayList<>();
+    for (int index = 0; index < numberOfCourses; index++) {
+      addedCourses.add(addCourseToProject(project));
+    }
+    return addedCourses;
   }
 
   public void removeCourse(StudentCourse course) {
@@ -285,14 +307,87 @@ public class Student {
     }
   }
 
+  public StudentProject getProjectForCourse(StudentCourse course) {
+    ensureFirstCourse();
+    for (StudentProject project : projects) {
+      if (project.getCourses().contains(course)) {
+        return project;
+      }
+    }
+    return null;
+  }
+
+  public StudentProject findProjectById(int projectId) {
+    ensureFirstCourse();
+    for (StudentProject project : projects) {
+      if (project.getId() == projectId) {
+        return project;
+      }
+    }
+    return null;
+  }
+
+  public StudentCourse findCourseById(int courseId) {
+    ensureFirstCourse();
+    for (StudentCourse course : getCourses()) {
+      if (course.getId() == courseId) {
+        return course;
+      }
+    }
+    return null;
+  }
+
   public List<StudentProject> getProjects() {
     ensureFirstCourse();
+    ensureEntityIds();
     return projects;
+  }
+
+  public void replaceProjects(List<StudentProject> loadedProjects) {
+    projects.clear();
+    courses.clear();
+    projects.addAll(loadedProjects);
+    for (StudentProject project : projects) {
+      courses.addAll(project.getCourses());
+    }
+    ensureFirstCourse();
+    ensureEntityIds();
+  }
+
+  public StudentProject getCurrentProject() {
+    ensureFirstCourse();
+    return projects.get(projects.size() - 1);
+  }
+
+  public double getPaymentCreditBalance() {
+    return paymentCreditBalance;
+  }
+
+  public void setPaymentCreditBalance(double paymentCreditBalance) {
+    this.paymentCreditBalance = paymentCreditBalance;
+  }
+
+  public int getNextProjectId() {
+    return nextProjectId;
+  }
+
+  public void setNextProjectId(int nextProjectId) {
+    this.nextProjectId = Math.max(1, nextProjectId);
+  }
+
+  public int getNextCourseId() {
+    return nextCourseId;
+  }
+
+  public void setNextCourseId(int nextCourseId) {
+    this.nextCourseId = Math.max(1, nextCourseId);
   }
 
   public StudentProject addProject() {
     ensureFirstProject();
+    ensureEntityIds();
     StudentProject project = new StudentProject("Project " + (projects.size() + 1));
+    project.setId(nextProjectId++);
     projects.add(project);
     return project;
   }
@@ -324,7 +419,13 @@ public class Student {
       return;
     }
 
-    StudentCourse firstCourse = new StudentCourse("First course", courseDay, courseHour, coursePrice);
+    StudentCourse firstCourse = new StudentCourse(
+        "First course",
+        courseDay,
+        firstDateForDay(courseDay),
+        courseHour,
+        coursePrice);
+    firstCourse.setId(nextCourseId++);
     firstCourse.setStatus(firstCourseStatus);
     firstCourse.setAssignment(nextWeekAssignment);
     firstCourse.setComment(thisWeekComment);
@@ -338,6 +439,7 @@ public class Student {
     }
 
     StudentProject firstProject = new StudentProject("Project 1");
+    firstProject.setId(nextProjectId++);
     firstProject.getCourses().addAll(courses);
     projects.add(firstProject);
   }
@@ -346,6 +448,66 @@ public class Student {
     for (int index = 0; index < projects.size(); index++) {
       projects.get(index).setName("Project " + (index + 1));
     }
+  }
+
+  public void ensureEntityIds() {
+    int highestProjectId = 0;
+    int highestCourseId = 0;
+
+    for (StudentProject project : projects) {
+      if (project.getId() <= 0) {
+        project.setId(nextProjectId++);
+      }
+      highestProjectId = Math.max(highestProjectId, project.getId());
+
+      for (StudentCourse course : project.getCourses()) {
+        if (course.getId() <= 0) {
+          course.setId(nextCourseId++);
+        }
+        highestCourseId = Math.max(highestCourseId, course.getId());
+      }
+    }
+
+    nextProjectId = Math.max(nextProjectId, highestProjectId + 1);
+    nextCourseId = Math.max(nextCourseId, highestCourseId + 1);
+  }
+
+  private LocalDate findNextCourseDate(DayOfWeek day) {
+    if (day == null) {
+      return null;
+    }
+
+    Set<LocalDate> usedDates = new HashSet<>();
+    LocalDate latestCourseDate = null;
+    for (StudentCourse existingCourse : getCourses()) {
+      LocalDate existingDate = existingCourse.getDate();
+      if (existingDate == null && existingCourse.getDay() != null) {
+        existingDate = firstDateForDay(existingCourse.getDay());
+        existingCourse.setDate(existingDate);
+      }
+
+      if (existingDate != null) {
+        usedDates.add(existingDate);
+        if (existingDate.getDayOfWeek() == day
+            && (latestCourseDate == null || existingDate.isAfter(latestCourseDate))) {
+          latestCourseDate = existingDate;
+        }
+      }
+    }
+
+    LocalDate candidate = latestCourseDate == null ? firstDateForDay(day) : latestCourseDate.plusWeeks(1);
+    while (usedDates.contains(candidate)) {
+      candidate = candidate.plusWeeks(1);
+    }
+    return candidate;
+  }
+
+  private LocalDate firstDateForDay(DayOfWeek day) {
+    if (day == null) {
+      return null;
+    }
+
+    return LocalDate.now().with(TemporalAdjusters.nextOrSame(day));
   }
 
   private String buildName() {
