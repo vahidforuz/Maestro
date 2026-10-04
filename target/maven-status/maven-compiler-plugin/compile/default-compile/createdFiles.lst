@@ -9,6 +9,7 @@ com/maestro/service/TeacherServiceImpl.class
 com/maestro/service/PaymentService.class
 com/maestro/service/TeacherService.class
 com/maestro/model/Student.class
+com/maestro/database/SQLiteTransactionManager.class
 com/maestro/gui/StudentProfileView$ReviewOption.class
 com/maestro/service/StudentServiceImpl.class
 com/maestro/model/Payment.class
@@ -18,4 +19,6 @@ com/maestro/model/Level.class
 com/maestro/service/StudentService.class
 com/maestro/gui/AddStudentDialog.class
 com/maestro/gui/StudentProfileView.class
+com/maestro/repository/TransactionManager.class
 com/maestro/model/CourseNote.class
+com/maestro/repository/TransactionManager$TransactionWork.class

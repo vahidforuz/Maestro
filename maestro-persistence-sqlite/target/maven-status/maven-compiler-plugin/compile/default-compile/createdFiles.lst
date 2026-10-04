@@ -1,0 +1,15 @@
+com/maestro/repository/sqlite/SQLitePieceRepository.class
+com/maestro/repository/sqlite/SQLiteStudentRepository.class
+com/maestro/repository/sqlite/SQLiteCourseRepository.class
+com/maestro/repository/sqlite/SQLiteNoteRepository.class
+com/maestro/repository/sqlite/SQLitePaymentRepository.class
+com/maestro/database/DatabaseInitializer.class
+com/maestro/repository/sqlite/SQLiteRepositorySupport.class
+com/maestro/repository/sqlite/SQLiteRepositoryFactory.class
+com/maestro/repository/sqlite/SQLiteProjectRepository.class
+com/maestro/database/SQLiteTransactionManager.class
+com/maestro/database/SQLiteDatabaseProvider.class
+com/maestro/database/DatabaseInitializer$Migration.class
+com/maestro/database/LegacyDataMigrator.class
+com/maestro/repository/sqlite/SQLiteTeacherRepository.class
+com/maestro/database/DatabaseProvider.class

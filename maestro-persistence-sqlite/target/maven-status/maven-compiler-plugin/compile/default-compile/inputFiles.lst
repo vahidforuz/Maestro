@@ -1,0 +1,14 @@
+/home/vahid/Maestro/maestro-persistence-sqlite/src/main/java/com/maestro/repository/sqlite/SQLiteRepositoryFactory.java
+/home/vahid/Maestro/maestro-persistence-sqlite/src/main/java/com/maestro/database/LegacyDataMigrator.java
+/home/vahid/Maestro/maestro-persistence-sqlite/src/main/java/com/maestro/repository/sqlite/SQLitePaymentRepository.java
+/home/vahid/Maestro/maestro-persistence-sqlite/src/main/java/com/maestro/repository/sqlite/SQLiteRepositorySupport.java
+/home/vahid/Maestro/maestro-persistence-sqlite/src/main/java/com/maestro/database/DatabaseProvider.java
+/home/vahid/Maestro/maestro-persistence-sqlite/src/main/java/com/maestro/repository/sqlite/SQLitePieceRepository.java
+/home/vahid/Maestro/maestro-persistence-sqlite/src/main/java/com/maestro/repository/sqlite/SQLiteTeacherRepository.java
+/home/vahid/Maestro/maestro-persistence-sqlite/src/main/java/com/maestro/database/DatabaseInitializer.java
+/home/vahid/Maestro/maestro-persistence-sqlite/src/main/java/com/maestro/repository/sqlite/SQLiteNoteRepository.java
+/home/vahid/Maestro/maestro-persistence-sqlite/src/main/java/com/maestro/repository/sqlite/SQLiteCourseRepository.java
+/home/vahid/Maestro/maestro-persistence-sqlite/src/main/java/com/maestro/database/SQLiteDatabaseProvider.java
+/home/vahid/Maestro/maestro-persistence-sqlite/src/main/java/com/maestro/repository/sqlite/SQLiteProjectRepository.java
+/home/vahid/Maestro/maestro-persistence-sqlite/src/main/java/com/maestro/database/SQLiteTransactionManager.java
+/home/vahid/Maestro/maestro-persistence-sqlite/src/main/java/com/maestro/repository/sqlite/SQLiteStudentRepository.java
