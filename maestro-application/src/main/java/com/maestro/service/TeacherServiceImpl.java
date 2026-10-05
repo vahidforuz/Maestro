@@ -43,6 +43,18 @@ public class TeacherServiceImpl implements TeacherService {
    }
 
    @Override
+   public void updateTeacher(Teacher teacher) {
+      teacherRepository.update(teacher);
+      for (int index = 0; index < teachers.size(); index++) {
+         if (teachers.get(index).getId() == teacher.getId()) {
+            teachers.set(index, teacher);
+            return;
+         }
+      }
+      teachers.add(teacher);
+   }
+
+   @Override
    public boolean deleteTeacherById(int id) {
       Teacher teacher = findTeacherById(id);
       if (teacher == null) {

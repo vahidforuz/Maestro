@@ -17,6 +17,7 @@ public interface TeacherService {
    // List<Teacher> findTeachersByName(String name);
 
    // void updateTeacher(Teacher teacher);
+   void updateTeacher(Teacher teacher);
 
    boolean deleteTeacherById(int id);
 

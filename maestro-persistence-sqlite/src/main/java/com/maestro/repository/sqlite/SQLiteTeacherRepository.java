@@ -23,19 +23,44 @@ public class SQLiteTeacherRepository extends SQLiteRepositorySupport implements 
       try {
          connection = getConnection();
          try (PreparedStatement statement = connection.prepareStatement(
-               "INSERT INTO teachers (id, name, telephone, email, address, status) VALUES (?, ?, ?, ?, ?, ?) "
+               "INSERT INTO teachers ("
+                     + "id, name, telephone, email, address, status, first_name, last_name, studio_name, city, postal_code, "
+                     + "main_instrument, other_instruments, default_lesson_duration, default_lesson_price, currency, profile_image_path"
+                     + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                      + "ON CONFLICT(id) DO UPDATE SET "
                      + "name = excluded.name, "
                      + "telephone = excluded.telephone, "
                      + "email = excluded.email, "
                      + "address = excluded.address, "
-                     + "status = excluded.status")) {
+                     + "status = excluded.status, "
+                     + "first_name = excluded.first_name, "
+                     + "last_name = excluded.last_name, "
+                     + "studio_name = excluded.studio_name, "
+                     + "city = excluded.city, "
+                     + "postal_code = excluded.postal_code, "
+                     + "main_instrument = excluded.main_instrument, "
+                     + "other_instruments = excluded.other_instruments, "
+                     + "default_lesson_duration = excluded.default_lesson_duration, "
+                     + "default_lesson_price = excluded.default_lesson_price, "
+                     + "currency = excluded.currency, "
+                     + "profile_image_path = excluded.profile_image_path")) {
             statement.setInt(1, teacher.getId());
             statement.setString(2, teacher.getName());
             statement.setString(3, teacher.getTelephone());
             statement.setString(4, teacher.getEmail());
             statement.setString(5, teacher.getAddress());
             statement.setString(6, teacher.getStatus().name());
+            statement.setString(7, teacher.getFirstName());
+            statement.setString(8, teacher.getLastName());
+            statement.setString(9, teacher.getStudioName());
+            statement.setString(10, teacher.getCity());
+            statement.setString(11, teacher.getPostalCode());
+            statement.setString(12, teacher.getMainInstrument());
+            statement.setString(13, teacher.getOtherInstruments());
+            statement.setInt(14, teacher.getDefaultLessonDuration());
+            statement.setDouble(15, teacher.getDefaultLessonPrice());
+            statement.setString(16, teacher.getCurrency());
+            statement.setString(17, teacher.getProfileImagePath());
             statement.executeUpdate();
          }
          return teacher;
@@ -113,6 +138,17 @@ public class SQLiteTeacherRepository extends SQLiteRepositorySupport implements 
             resultSet.getString("email"),
             resultSet.getString("address"));
       teacher.setStatus(Status.valueOf(resultSet.getString("status")));
+      teacher.setFirstName(resultSet.getString("first_name"));
+      teacher.setLastName(resultSet.getString("last_name"));
+      teacher.setStudioName(resultSet.getString("studio_name"));
+      teacher.setCity(resultSet.getString("city"));
+      teacher.setPostalCode(resultSet.getString("postal_code"));
+      teacher.setMainInstrument(resultSet.getString("main_instrument"));
+      teacher.setOtherInstruments(resultSet.getString("other_instruments"));
+      teacher.setDefaultLessonDuration(resultSet.getInt("default_lesson_duration"));
+      teacher.setDefaultLessonPrice(resultSet.getDouble("default_lesson_price"));
+      teacher.setCurrency(resultSet.getString("currency"));
+      teacher.setProfileImagePath(resultSet.getString("profile_image_path"));
       return teacher;
    }
 

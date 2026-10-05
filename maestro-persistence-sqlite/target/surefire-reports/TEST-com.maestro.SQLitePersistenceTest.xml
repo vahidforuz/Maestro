@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<testsuite tests="5" failures="0" name="com.maestro.SQLitePersistenceTest" time="0.806" errors="0" skipped="0">
+<testsuite tests="7" failures="0" name="com.maestro.SQLitePersistenceTest" time="1.351" errors="0" skipped="0">
   <properties>
     <property name="jansi.mode" value="force"/>
     <property name="java.runtime.name" value="OpenJDK Runtime Environment"/>
@@ -58,9 +58,11 @@
     <property name="sun.io.unicode.encoding" value="UnicodeLittle"/>
     <property name="sun.cpu.endian" value="little"/>
   </properties>
-  <testcase classname="com.maestro.SQLitePersistenceTest" name="testStudentProjectCourseNotePaymentPersistAfterReopen" time="0.363"/>
-  <testcase classname="com.maestro.SQLitePersistenceTest" name="testPaymentServiceCreatesCoursesAndPersistsRelationships" time="0.041"/>
-  <testcase classname="com.maestro.SQLitePersistenceTest" name="testTransactionRollback" time="0.017"/>
-  <testcase classname="com.maestro.SQLitePersistenceTest" name="testLegacyMigrationRunsOnce" time="0.068"/>
-  <testcase classname="com.maestro.SQLitePersistenceTest" name="testScheduledReviewsAcceptDismissAndRollForward" time="0.317"/>
+  <testcase classname="com.maestro.SQLitePersistenceTest" name="testStudentProjectCourseNotePaymentPersistAfterReopen" time="0.406"/>
+  <testcase classname="com.maestro.SQLitePersistenceTest" name="testPaymentServiceCreatesCoursesAndPersistsRelationships" time="0.085"/>
+  <testcase classname="com.maestro.SQLitePersistenceTest" name="testTeacherProfilePersistsAfterReopen" time="0.055"/>
+  <testcase classname="com.maestro.SQLitePersistenceTest" name="testTeacherDefaultsCanPrefillNewStudentWithoutChangingExistingCourses" time="0"/>
+  <testcase classname="com.maestro.SQLitePersistenceTest" name="testTransactionRollback" time="0.039"/>
+  <testcase classname="com.maestro.SQLitePersistenceTest" name="testLegacyMigrationRunsOnce" time="0.143"/>
+  <testcase classname="com.maestro.SQLitePersistenceTest" name="testScheduledReviewsAcceptDismissAndRollForward" time="0.623"/>
 </testsuite>

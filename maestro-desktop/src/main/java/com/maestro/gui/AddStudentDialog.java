@@ -34,7 +34,7 @@ public class AddStudentDialog extends Dialog<Student> {
 
       ComboBox<Instrument> instrumentBox = new ComboBox<>();
       instrumentBox.getItems().addAll(Instrument.values());
-      instrumentBox.setValue(Instrument.PIANO);
+      instrumentBox.setValue(defaultInstrument(currentTeacher));
 
       ComboBox<Level> levelBox = new ComboBox<>();
       levelBox.getItems().addAll(Level.values());
@@ -45,7 +45,7 @@ public class AddStudentDialog extends Dialog<Student> {
       courseDayBox.setValue(DayOfWeek.MONDAY);
 
       TextField courseHourField = new TextField("16:00");
-      TextField coursePriceField = new TextField("0");
+      TextField coursePriceField = new TextField(currentTeacher == null ? "0" : String.valueOf(currentTeacher.getDefaultLessonPrice()));
 
       CheckBox linkedToTeacherBox = new CheckBox("Link to current teacher");
       linkedToTeacherBox.setSelected(currentTeacher != null);
@@ -130,5 +130,16 @@ public class AddStudentDialog extends Dialog<Student> {
       alert.setHeaderText(null);
       alert.setContentText(message);
       alert.showAndWait();
+   }
+
+   private Instrument defaultInstrument(Teacher teacher) {
+      if (teacher != null && teacher.getMainInstrument() != null && !teacher.getMainInstrument().isBlank()) {
+         try {
+            return Instrument.valueOf(teacher.getMainInstrument().trim().toUpperCase());
+         } catch (IllegalArgumentException exception) {
+            return Instrument.PIANO;
+         }
+      }
+      return Instrument.PIANO;
    }
 }

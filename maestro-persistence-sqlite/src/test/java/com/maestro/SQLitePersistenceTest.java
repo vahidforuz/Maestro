@@ -108,6 +108,85 @@ public class SQLitePersistenceTest extends TestCase {
       assertEquals(0.0, loaded.getPaymentCreditBalance());
    }
 
+   public void testTeacherProfilePersistsAfterReopen() throws Exception {
+      Path databasePath = tempDatabasePath();
+      RepositoryFactory repositories = repositories(databasePath);
+
+      Teacher teacher = new Teacher(88, "Vahid Foruzanmehr", "555", "vahid@example.com", "123 Music Ave");
+      teacher.setFirstName("Vahid");
+      teacher.setLastName("Foruzanmehr");
+      teacher.setStudioName("Maestro Music Studio");
+      teacher.setCity("Toronto");
+      teacher.setPostalCode("M1M 1M1");
+      teacher.setMainInstrument("Piano");
+      teacher.setOtherInstruments("Guitar");
+      teacher.setDefaultLessonDuration(60);
+      teacher.setDefaultLessonPrice(25);
+      teacher.setCurrency("CAD");
+      teacher.setProfileImagePath("/tmp/profile.png");
+      repositories.teachers().save(teacher);
+
+      Teacher loaded = repositories(databasePath).teachers().findById(88).orElseThrow();
+      assertEquals("Vahid", loaded.getFirstName());
+      assertEquals("Foruzanmehr", loaded.getLastName());
+      assertEquals("Maestro Music Studio", loaded.getStudioName());
+      assertEquals("Toronto", loaded.getCity());
+      assertEquals("M1M 1M1", loaded.getPostalCode());
+      assertEquals("Piano", loaded.getMainInstrument());
+      assertEquals("Guitar", loaded.getOtherInstruments());
+      assertEquals(60, loaded.getDefaultLessonDuration());
+      assertEquals(25.0, loaded.getDefaultLessonPrice());
+      assertEquals("CAD", loaded.getCurrency());
+      assertEquals("/tmp/profile.png", loaded.getProfileImagePath());
+
+      loaded.setDefaultLessonDuration(45);
+      loaded.setDefaultLessonPrice(30);
+      loaded.setEmail("updated@example.com");
+      repositories.teachers().update(loaded);
+
+      Teacher updated = repositories(databasePath).teachers().findById(88).orElseThrow();
+      assertEquals(45, updated.getDefaultLessonDuration());
+      assertEquals(30.0, updated.getDefaultLessonPrice());
+      assertEquals("updated@example.com", updated.getEmail());
+   }
+
+   public void testTeacherDefaultsCanPrefillNewStudentWithoutChangingExistingCourses() throws Exception {
+      Teacher teacher = new Teacher(89, "Default Teacher", "", "", "");
+      teacher.setDefaultLessonDuration(60);
+      teacher.setDefaultLessonPrice(35);
+      teacher.setMainInstrument("PIANO");
+
+      Student existing = new Student(
+            "Existing",
+            "Student",
+            "",
+            "",
+            Instrument.PIANO,
+            Level.BEGINNER,
+            teacher.getId(),
+            DayOfWeek.MONDAY,
+            LocalTime.of(16, 0),
+            20);
+
+      Student createdWithDefault = new Student(
+            "New",
+            "Student",
+            "",
+            "",
+            Instrument.valueOf(teacher.getMainInstrument()),
+            Level.BEGINNER,
+            teacher.getId(),
+            DayOfWeek.TUESDAY,
+            LocalTime.of(17, 0),
+            teacher.getDefaultLessonPrice());
+
+      teacher.setDefaultLessonPrice(50);
+
+      assertEquals(20.0, existing.getCoursePrice());
+      assertEquals(35.0, createdWithDefault.getCoursePrice());
+      assertEquals(50.0, teacher.getDefaultLessonPrice());
+   }
+
    public void testTransactionRollback() throws Exception {
       Path databasePath = tempDatabasePath();
       RepositoryFactory repositories = repositories(databasePath);

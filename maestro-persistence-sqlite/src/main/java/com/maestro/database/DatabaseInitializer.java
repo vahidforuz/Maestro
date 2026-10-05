@@ -24,6 +24,7 @@ public class DatabaseInitializer {
                   + "applied_at TEXT NOT NULL)");
          }
          runMigration(connection, 1, this::createInitialSchema);
+         runMigration(connection, 2, this::addTeacherProfileColumns);
       } catch (SQLException exception) {
          throw new IllegalStateException("Could not initialize database", exception);
       } finally {
@@ -46,7 +47,18 @@ public class DatabaseInitializer {
                   + "telephone TEXT, "
                   + "email TEXT, "
                   + "address TEXT, "
-                  + "status TEXT NOT NULL)");
+                  + "status TEXT NOT NULL, "
+                  + "first_name TEXT NOT NULL DEFAULT '', "
+                  + "last_name TEXT NOT NULL DEFAULT '', "
+                  + "studio_name TEXT NOT NULL DEFAULT '', "
+                  + "city TEXT NOT NULL DEFAULT '', "
+                  + "postal_code TEXT NOT NULL DEFAULT '', "
+                  + "main_instrument TEXT NOT NULL DEFAULT '', "
+                  + "other_instruments TEXT NOT NULL DEFAULT '', "
+                  + "default_lesson_duration INTEGER NOT NULL DEFAULT 60, "
+                  + "default_lesson_price REAL NOT NULL DEFAULT 0, "
+                  + "currency TEXT NOT NULL DEFAULT 'CAD', "
+                  + "profile_image_path TEXT NOT NULL DEFAULT '')");
             statement.execute("CREATE TABLE IF NOT EXISTS students ("
                   + "id INTEGER PRIMARY KEY, "
                   + "first_name TEXT, "
@@ -136,6 +148,29 @@ public class DatabaseInitializer {
             statement.execute("CREATE INDEX IF NOT EXISTS idx_payments_student_id ON payments(student_id)");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_notes_course ON notes(student_id, course_id)");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_notes_review_due ON notes(student_id, review_status, review_date)");
+      }
+   }
+
+   private void addTeacherProfileColumns(Connection connection) throws SQLException {
+      addColumnIfMissing(connection, "teachers", "first_name", "TEXT NOT NULL DEFAULT ''");
+      addColumnIfMissing(connection, "teachers", "last_name", "TEXT NOT NULL DEFAULT ''");
+      addColumnIfMissing(connection, "teachers", "studio_name", "TEXT NOT NULL DEFAULT ''");
+      addColumnIfMissing(connection, "teachers", "city", "TEXT NOT NULL DEFAULT ''");
+      addColumnIfMissing(connection, "teachers", "postal_code", "TEXT NOT NULL DEFAULT ''");
+      addColumnIfMissing(connection, "teachers", "main_instrument", "TEXT NOT NULL DEFAULT ''");
+      addColumnIfMissing(connection, "teachers", "other_instruments", "TEXT NOT NULL DEFAULT ''");
+      addColumnIfMissing(connection, "teachers", "default_lesson_duration", "INTEGER NOT NULL DEFAULT 60");
+      addColumnIfMissing(connection, "teachers", "default_lesson_price", "REAL NOT NULL DEFAULT 0");
+      addColumnIfMissing(connection, "teachers", "currency", "TEXT NOT NULL DEFAULT 'CAD'");
+      addColumnIfMissing(connection, "teachers", "profile_image_path", "TEXT NOT NULL DEFAULT ''");
+      try (PreparedStatement statement = connection.prepareStatement(
+            "UPDATE teachers SET first_name = CASE "
+                  + "WHEN first_name = '' AND instr(name, ' ') > 0 THEN substr(name, 1, instr(name, ' ') - 1) "
+                  + "WHEN first_name = '' THEN name ELSE first_name END, "
+                  + "last_name = CASE "
+                  + "WHEN last_name = '' AND instr(name, ' ') > 0 THEN substr(name, instr(name, ' ') + 1) "
+                  + "ELSE last_name END")) {
+         statement.executeUpdate();
       }
    }
 
