@@ -32,7 +32,7 @@ public class ReviewServiceImpl implements ReviewService {
          }
 
          for (CourseNote note : sourceCourse.getNotes()) {
-            if (isDue(note, currentCourseDate)) {
+            if (isDue(note, currentCourse, currentCourseDate)) {
                dueReviews.add(new DueReview(note, sourceCourse, sourceCourse.getDate()));
             }
          }
@@ -46,14 +46,9 @@ public class ReviewServiceImpl implements ReviewService {
 
    @Override
    public CourseNote acceptReview(Student student, StudentCourse currentCourse, CourseNote reviewNote) {
-      CourseNote copiedNote = currentCourse.addNote(reviewNote.getPiece());
-      copiedNote.setComment(reviewNote.getComment());
-      copiedNote.setSourceCourseId(currentCourse.getId());
-
-      reviewNote.setReviewStatus(ReviewStatus.ACCEPTED);
-      reviewNote.setAcceptedCourseId(currentCourse.getId());
+      reviewNote.markReviewed(currentCourse.getId(), currentCourse.getDate());
       studentRepository.update(student);
-      return copiedNote;
+      return reviewNote;
    }
 
    @Override
@@ -62,9 +57,36 @@ public class ReviewServiceImpl implements ReviewService {
       studentRepository.update(student);
    }
 
-   private boolean isDue(CourseNote note, LocalDate currentCourseDate) {
+   @Override
+   public void rescheduleReview(Student student, StudentCourse currentCourse, CourseNote reviewNote) {
+      StudentCourse nextCourse = findNextCourse(student, currentCourse);
+      if (nextCourse == null) {
+         LocalDate currentDate = currentCourse.getDate();
+         reviewNote.setReviewSchedule(1, currentDate);
+      } else {
+         reviewNote.setReviewSchedule(1, nextCourse.getDate(), nextCourse.getId());
+      }
+      reviewNote.appendReviewHistory("Course " + currentCourse.getId() + " - Rescheduled");
+      studentRepository.update(student);
+   }
+
+   private boolean isDue(CourseNote note, StudentCourse currentCourse, LocalDate currentCourseDate) {
+      if (note.getReviewStatus() != ReviewStatus.PENDING) {
+         return false;
+      }
+      if (note.getTargetCourseId() != null) {
+         return note.getTargetCourseId() == currentCourse.getId();
+      }
       return note.getReviewDate() != null
-            && note.getReviewStatus() == ReviewStatus.PENDING
             && !note.getReviewDate().isAfter(currentCourseDate);
+   }
+
+   private StudentCourse findNextCourse(Student student, StudentCourse currentCourse) {
+      return student.getCourses().stream()
+            .filter(course -> course.getId() != currentCourse.getId())
+            .filter(course -> course.getDate() != null && currentCourse.getDate() != null
+                  && course.getDate().isAfter(currentCourse.getDate()))
+            .min(Comparator.comparing(StudentCourse::getDate))
+            .orElse(null);
    }
 }

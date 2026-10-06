@@ -219,9 +219,9 @@ public class SQLiteStudentRepository extends SQLiteRepositorySupport implements 
             for (int noteIndex = 0; noteIndex < notes.size(); noteIndex++) {
                CourseNote note = notes.get(noteIndex);
                try (PreparedStatement statement = connection.prepareStatement(
-                     "INSERT INTO notes (id, student_id, course_id, piece, comment, review_weeks, review_date, "
-                           + "review_status, source_course_id, accepted_course_id, sort_order) "
-                           + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     "INSERT INTO notes (id, student_id, course_id, piece, comment, created_date, review_weeks, review_date, "
+                           + "review_status, source_course_id, accepted_course_id, target_course_id, reviewed_date, review_history, sort_order) "
+                           + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                      Statement.RETURN_GENERATED_KEYS)) {
                   if (note.getId() > 0) {
                      statement.setInt(1, note.getId());
@@ -232,12 +232,16 @@ public class SQLiteStudentRepository extends SQLiteRepositorySupport implements 
                   statement.setInt(3, course.getId());
                   statement.setString(4, note.getPiece());
                   statement.setString(5, note.getComment());
-                  statement.setObject(6, note.getReviewWeeks());
-                  statement.setString(7, note.getReviewDate() == null ? null : note.getReviewDate().toString());
-                  statement.setString(8, note.getReviewStatus() == null ? null : note.getReviewStatus().name());
-                  statement.setInt(9, note.getSourceCourseId());
-                  statement.setObject(10, note.getAcceptedCourseId());
-                  statement.setInt(11, noteIndex);
+                  statement.setString(6, note.getCreatedDate() == null ? null : note.getCreatedDate().toString());
+                  statement.setObject(7, note.getReviewWeeks());
+                  statement.setString(8, note.getReviewDate() == null ? null : note.getReviewDate().toString());
+                  statement.setString(9, note.getReviewStatus() == null ? null : note.getReviewStatus().name());
+                  statement.setInt(10, note.getSourceCourseId());
+                  statement.setObject(11, note.getAcceptedCourseId());
+                  statement.setObject(12, note.getTargetCourseId());
+                  statement.setString(13, note.getReviewedDate() == null ? null : note.getReviewedDate().toString());
+                  statement.setString(14, note.getReviewHistory());
+                  statement.setInt(15, noteIndex);
                   statement.executeUpdate();
                   if (note.getId() <= 0) {
                      note.setId(generatedId(statement));
@@ -352,7 +356,11 @@ public class SQLiteStudentRepository extends SQLiteRepositorySupport implements 
                      dateValue(resultSet.getString("review_date")),
                      enumValue(ReviewStatus.class, resultSet.getString("review_status")),
                      resultSet.getInt("source_course_id"),
-                     nullableInt(resultSet, "accepted_course_id"));
+                     nullableInt(resultSet, "accepted_course_id"),
+                     dateValue(resultSet.getString("created_date")),
+                     nullableInt(resultSet, "target_course_id"),
+                     dateValue(resultSet.getString("reviewed_date")),
+                     resultSet.getString("review_history"));
                notes.add(note);
             }
          }

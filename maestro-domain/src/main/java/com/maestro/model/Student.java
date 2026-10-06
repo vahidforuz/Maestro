@@ -285,6 +285,7 @@ public class Student implements Serializable {
     course.setId(nextCourseId++);
     courses.add(course);
     project.getCourses().add(course);
+    resolvePendingReviewTargets(project, course);
     return course;
   }
 
@@ -300,6 +301,7 @@ public class Student implements Serializable {
   public void removeCourse(StudentCourse course) {
     ensureFirstCourse();
     if (courses.size() > 1 || !getFirstProject().getCourses().contains(course)) {
+      clearReviewReferencesToCourse(course);
       courses.remove(course);
       for (StudentProject project : projects) {
         project.getCourses().remove(course);
@@ -508,6 +510,37 @@ public class Student implements Serializable {
     }
 
     return LocalDate.now().with(TemporalAdjusters.nextOrSame(day));
+  }
+
+  private void clearReviewReferencesToCourse(StudentCourse removedCourse) {
+    for (StudentCourse existingCourse : getCourses()) {
+      for (CourseNote note : existingCourse.getNotes()) {
+        if (note.getTargetCourseId() != null && note.getTargetCourseId() == removedCourse.getId()) {
+          note.appendReviewHistory("Target course " + removedCourse.getId() + " was deleted");
+          note.clearReviewSchedule();
+        }
+      }
+    }
+  }
+
+  private void resolvePendingReviewTargets(StudentProject project, StudentCourse targetCourse) {
+    if (targetCourse.getDate() == null) {
+      return;
+    }
+    for (StudentCourse sourceCourse : project.getCourses()) {
+      if (sourceCourse.getId() == targetCourse.getId()) {
+        continue;
+      }
+      for (CourseNote note : sourceCourse.getNotes()) {
+        if (note.getReviewStatus() == ReviewStatus.PENDING
+            && note.getTargetCourseId() == null
+            && note.getReviewDate() != null
+            && !note.getReviewDate().isAfter(targetCourse.getDate())) {
+          note.setReviewSchedule(note.getReviewWeeks(), targetCourse.getDate(), targetCourse.getId());
+          note.appendReviewHistory("Resolved to Course " + targetCourse.getId());
+        }
+      }
+    }
   }
 
   private String buildName() {

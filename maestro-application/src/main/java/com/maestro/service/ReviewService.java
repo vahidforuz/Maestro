@@ -13,6 +13,8 @@ public interface ReviewService {
 
    void dismissReview(Student student, CourseNote reviewNote);
 
+   void rescheduleReview(Student student, StudentCourse currentCourse, CourseNote reviewNote);
+
    record DueReview(CourseNote note, StudentCourse sourceCourse, LocalDate sourceCourseDate) {
    }
 }

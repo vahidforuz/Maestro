@@ -6,11 +6,13 @@ class AsyncState<T> extends StatelessWidget {
     required this.snapshot,
     required this.builder,
     this.emptyMessage,
+    this.onRetry,
   });
 
   final AsyncSnapshot<T> snapshot;
   final Widget Function(T data) builder;
   final String? emptyMessage;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -19,9 +21,18 @@ class AsyncState<T> extends StatelessWidget {
     }
     if (snapshot.hasError) {
       return Center(
-        child: Text(
-          snapshot.error.toString(),
-          textAlign: TextAlign.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              snapshot.error.toString(),
+              textAlign: TextAlign.center,
+            ),
+            if (onRetry != null) ...[
+              const SizedBox(height: 12),
+              ElevatedButton(onPressed: onRetry, child: const Text('Retry')),
+            ],
+          ],
         ),
       );
     }

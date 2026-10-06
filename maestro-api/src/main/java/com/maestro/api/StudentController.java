@@ -172,6 +172,7 @@ public class StudentController {
       course.setComment(request.comment());
       course.setHomeworkNextLesson(request.homeworkNextLesson());
       updateNoteReviewDates(course);
+      updateTargetReviewDates(student, course);
       return save(student);
    }
 
@@ -194,9 +195,10 @@ public class StudentController {
          @PathVariable("courseId") int courseId,
          @RequestBody NoteRequest request) {
       Student student = requireStudent(id);
-      StudentCourse course = requireCourse(requireProject(student, projectId), courseId);
+      StudentProject project = requireProject(student, projectId);
+      StudentCourse course = requireCourse(project, courseId);
       CourseNote note = course.addNote(request.piece());
-      applyNoteRequest(course, note, request);
+      applyNoteRequest(project, course, note, request);
       return save(student);
    }
 
@@ -208,9 +210,10 @@ public class StudentController {
          @PathVariable("noteId") int noteId,
          @RequestBody NoteRequest request) {
       Student student = requireStudent(id);
-      StudentCourse course = requireCourse(requireProject(student, projectId), courseId);
+      StudentProject project = requireProject(student, projectId);
+      StudentCourse course = requireCourse(project, courseId);
       CourseNote note = requireNote(course, noteId);
-      applyNoteRequest(course, note, request);
+      applyNoteRequest(project, course, note, request);
       return save(student);
    }
 
@@ -270,17 +273,49 @@ public class StudentController {
       throw new ResponseStatusException(HttpStatus.NOT_FOUND);
    }
 
-   private void applyNoteRequest(StudentCourse course, CourseNote note, NoteRequest request) {
+   private void applyNoteRequest(StudentProject project, StudentCourse course, CourseNote note, NoteRequest request) {
       note.setPiece(request.piece());
       note.setComment(request.comment());
       note.setSourceCourseId(course.getId());
-      note.setReviewSchedule(request.reviewWeeks(), course.getDate());
+      StudentCourse targetCourse = request.targetCourseId() == null
+            ? findReviewTargetCourse(project, course, request.reviewWeeks())
+            : requireCourse(project, request.targetCourseId());
+      if (targetCourse != null) {
+         note.setReviewSchedule(request.reviewWeeks(), targetCourse.getDate(), targetCourse.getId());
+      } else {
+         note.setReviewSchedule(request.reviewWeeks(), course.getDate());
+      }
    }
 
    private void updateNoteReviewDates(StudentCourse course) {
       for (CourseNote note : course.getNotes()) {
-         note.setReviewSchedule(note.getReviewWeeks(), course.getDate());
+         if (note.getTargetCourseId() == null) {
+            note.setReviewSchedule(note.getReviewWeeks(), course.getDate());
+         }
       }
+   }
+
+   private void updateTargetReviewDates(Student student, StudentCourse targetCourse) {
+      for (StudentCourse course : student.getCourses()) {
+         for (CourseNote note : course.getNotes()) {
+            if (note.getTargetCourseId() != null && note.getTargetCourseId() == targetCourse.getId()) {
+               note.setReviewSchedule(note.getReviewWeeks(), targetCourse.getDate(), targetCourse.getId());
+            }
+         }
+      }
+   }
+
+   private StudentCourse findReviewTargetCourse(StudentProject project, StudentCourse sourceCourse, Integer reviewCourses) {
+      if (reviewCourses == null || reviewCourses <= 0) {
+         return null;
+      }
+      List<StudentCourse> courses = project.getCourses();
+      int sourceIndex = courses.indexOf(sourceCourse);
+      if (sourceIndex < 0) {
+         return null;
+      }
+      int targetIndex = sourceIndex + reviewCourses;
+      return targetIndex < courses.size() ? courses.get(targetIndex) : null;
    }
 
    private Student save(Student student) {
@@ -315,6 +350,6 @@ public class StudentController {
          String homeworkNextLesson) {
    }
 
-   public record NoteRequest(String piece, String comment, Integer reviewWeeks) {
+   public record NoteRequest(String piece, String comment, Integer reviewWeeks, Integer targetCourseId) {
    }
 }

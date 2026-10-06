@@ -124,6 +124,7 @@ public class StudentCourse implements Serializable {
    public CourseNote addNote(String piece) {
       CourseNote note = new CourseNote(piece);
       note.setSourceCourseId(id);
+      note.setCreatedDate(date);
       notes.add(note);
       return note;
    }

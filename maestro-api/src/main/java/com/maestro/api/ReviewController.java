@@ -40,22 +40,34 @@ public class ReviewController {
    }
 
    @PostMapping("/{noteId}/accept/{courseId}")
-   public CourseNote accept(
+   public Student accept(
          @PathVariable("studentId") int studentId,
          @PathVariable("noteId") int noteId,
          @PathVariable("courseId") int courseId) {
       Student student = requireStudent(studentId);
       CourseNote note = requireNote(student, noteId);
-      CourseNote accepted = reviewService.acceptReview(student, requireCourse(student, courseId), note);
+      reviewService.acceptReview(student, requireCourse(student, courseId), note);
       studentRepository.update(student);
-      return accepted;
+      return student;
    }
 
    @PostMapping("/{noteId}/dismiss")
-   public void dismiss(@PathVariable("studentId") int studentId, @PathVariable("noteId") int noteId) {
+   public Student dismiss(@PathVariable("studentId") int studentId, @PathVariable("noteId") int noteId) {
       Student student = requireStudent(studentId);
       reviewService.dismissReview(student, requireNote(student, noteId));
       studentRepository.update(student);
+      return student;
+   }
+
+   @PostMapping("/{noteId}/reschedule/{courseId}")
+   public Student reschedule(
+         @PathVariable("studentId") int studentId,
+         @PathVariable("noteId") int noteId,
+         @PathVariable("courseId") int courseId) {
+      Student student = requireStudent(studentId);
+      reviewService.rescheduleReview(student, requireCourse(student, courseId), requireNote(student, noteId));
+      studentRepository.update(student);
+      return student;
    }
 
    private Student requireStudent(int studentId) {

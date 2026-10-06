@@ -108,6 +108,44 @@ public class SQLitePersistenceTest extends TestCase {
       assertEquals(0.0, loaded.getPaymentCreditBalance());
    }
 
+   public void testAddCourseToSelectedProjectPersistsAfterReopen() throws Exception {
+      Path databasePath = tempDatabasePath();
+      RepositoryFactory repositories = repositories(databasePath);
+
+      Student student = new Student(
+            "Clara",
+            "Schumann",
+            "",
+            "",
+            Instrument.PIANO,
+            Level.INTERMEDIATE,
+            null,
+            DayOfWeek.MONDAY,
+            LocalTime.of(16, 0),
+            10);
+      student.setId(303);
+      StudentProject firstProject = student.getCurrentProject();
+      StudentProject secondProject = student.addProject();
+      secondProject.setName("Project 2");
+      StudentCourse addedCourse = student.addCourseToProject(secondProject);
+      repositories.students().save(student);
+
+      Student loaded = repositories(databasePath).students().findById(303).orElseThrow();
+      StudentProject loadedFirstProject = loaded.findProjectById(firstProject.getId());
+      StudentProject loadedSecondProject = loaded.findProjectById(secondProject.getId());
+
+      assertNotNull(loadedFirstProject);
+      assertNotNull(loadedSecondProject);
+      assertEquals(1, loadedFirstProject.getCourses().size());
+      assertEquals(1, loadedSecondProject.getCourses().size());
+
+      StudentCourse loadedCourse = loadedSecondProject.findCourseById(addedCourse.getId());
+      assertNotNull(loadedCourse);
+      assertEquals(firstProject.getCourses().get(0).getDate().plusWeeks(1), loadedCourse.getDate());
+      assertEquals(LocalTime.of(16, 0), loadedCourse.getHour());
+      assertEquals(10.0, loadedCourse.getPrice());
+   }
+
    public void testTeacherProfilePersistsAfterReopen() throws Exception {
       Path databasePath = tempDatabasePath();
       RepositoryFactory repositories = repositories(databasePath);
@@ -309,8 +347,9 @@ public class SQLitePersistenceTest extends TestCase {
       reviewService.acceptReview(student, october22, elise);
       assertEquals(ReviewStatus.ACCEPTED, elise.getReviewStatus());
       assertEquals(Integer.valueOf(october22.getId()), elise.getAcceptedCourseId());
-      assertEquals("Fur Elise", october22.getNotes().get(0).getPiece());
-      assertEquals("Practice measures 10-18 slowly.", october22.getNotes().get(0).getComment());
+      assertEquals(october1.getDate(), elise.getCreatedDate());
+      assertEquals(october22.getDate(), elise.getReviewedDate());
+      assertEquals(0, october22.getNotes().size());
 
       reviewService.dismissReview(student, dismissed);
       assertEquals(ReviewStatus.DISMISSED, dismissed.getReviewStatus());
@@ -324,11 +363,81 @@ public class SQLitePersistenceTest extends TestCase {
       assertEquals(0, reviewService.getDueReviews(student, october29).size());
 
       Student reloaded = repositories(databasePath).students().findById(303).orElseThrow();
+      StudentCourse reloadedOctober1 = reloaded.findCourseById(october1.getId());
       StudentCourse reloadedOctober29 = reloaded.findCourseById(october29.getId());
-      assertEquals(1, reloadedOctober29.getNotes().size());
-      assertEquals("Technique", reloadedOctober29.getNotes().get(0).getPiece());
+      assertEquals(3, reloadedOctober1.getNotes().size());
+      assertEquals(0, reloadedOctober29.getNotes().size());
+      assertEquals(ReviewStatus.ACCEPTED, reloadedOctober1.getNotes().get(1).getReviewStatus());
+      assertEquals(october29.getDate(), reloadedOctober1.getNotes().get(1).getReviewedDate());
       assertEquals(0, new ReviewServiceImpl(repositories(databasePath).students())
             .getDueReviews(reloaded, reloadedOctober29).size());
+   }
+
+   public void testReviewTargetsFutureCoursesWithoutDuplicatingNotes() throws Exception {
+      Path databasePath = tempDatabasePath();
+      RepositoryFactory repositories = repositories(databasePath);
+      ReviewService reviewService = new ReviewServiceImpl(repositories.students());
+
+      Student student = new Student(
+            "Target",
+            "Review",
+            "",
+            "",
+            Instrument.PIANO,
+            Level.BEGINNER,
+            null,
+            DayOfWeek.MONDAY,
+            LocalTime.of(16, 0),
+            10);
+      student.setId(404);
+      StudentProject project = student.getCurrentProject();
+      project.addPiece("Fur Elise");
+      StudentCourse course1 = project.getCourses().get(0);
+      course1.setDate(LocalDate.of(2026, 10, 5));
+      CourseNote unresolvedFuture = course1.addNote("Fur Elise");
+      unresolvedFuture.setComment("Resolve when next course exists.");
+      unresolvedFuture.setReviewSchedule(1, course1.getDate());
+      StudentCourse course2 = student.addCourseToProject(project);
+      course2.setDate(LocalDate.of(2026, 10, 12));
+      StudentCourse course3 = student.addCourseToProject(project);
+      course3.setDate(LocalDate.of(2026, 10, 19));
+      assertEquals(Integer.valueOf(course2.getId()), unresolvedFuture.getTargetCourseId());
+
+      CourseNote nextCourse = course1.addNote("Fur Elise");
+      nextCourse.setComment("Practice bars 10-18 slowly.");
+      nextCourse.setReviewSchedule(1, course2.getDate(), course2.getId());
+
+      CourseNote inTwoCourses = course1.addNote("Fur Elise");
+      inTwoCourses.setComment("Work on left-hand fingering.");
+      inTwoCourses.setReviewSchedule(2, course3.getDate(), course3.getId());
+      repositories.students().save(student);
+
+      assertEquals(2, reviewService.getDueReviews(student, course2).size());
+      assertEquals(unresolvedFuture.getId(), reviewService.getDueReviews(student, course2).get(0).note().getId());
+      assertEquals(nextCourse.getId(), reviewService.getDueReviews(student, course2).get(1).note().getId());
+      assertEquals(1, reviewService.getDueReviews(student, course3).size());
+      assertEquals(inTwoCourses.getId(), reviewService.getDueReviews(student, course3).get(0).note().getId());
+
+      reviewService.acceptReview(student, course2, nextCourse);
+      assertEquals(ReviewStatus.ACCEPTED, nextCourse.getReviewStatus());
+      assertEquals(0, course2.getNotes().size());
+
+      reviewService.rescheduleReview(student, course2, inTwoCourses);
+      assertEquals(Integer.valueOf(course3.getId()), inTwoCourses.getTargetCourseId());
+      assertEquals(ReviewStatus.PENDING, inTwoCourses.getReviewStatus());
+
+      Student reloaded = repositories(databasePath).students().findById(404).orElseThrow();
+      StudentCourse reloadedCourse1 = reloaded.findCourseById(course1.getId());
+      StudentCourse reloadedCourse2 = reloaded.findCourseById(course2.getId());
+      StudentCourse reloadedCourse3 = reloaded.findCourseById(course3.getId());
+      assertEquals(3, reloadedCourse1.getNotes().size());
+      assertEquals(0, reloadedCourse2.getNotes().size());
+      assertEquals(0, reloadedCourse3.getNotes().size());
+      assertEquals(Integer.valueOf(reloadedCourse2.getId()), reloadedCourse1.getNotes().get(0).getTargetCourseId());
+      assertEquals(ReviewStatus.ACCEPTED, reloadedCourse1.getNotes().get(1).getReviewStatus());
+      assertEquals(ReviewStatus.PENDING, reloadedCourse1.getNotes().get(2).getReviewStatus());
+      assertEquals(1, new ReviewServiceImpl(repositories(databasePath).students())
+            .getDueReviews(reloaded, reloadedCourse3).size());
    }
 
    private RepositoryFactory repositories(Path databasePath) {

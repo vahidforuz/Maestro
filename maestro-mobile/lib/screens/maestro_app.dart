@@ -25,6 +25,7 @@ class MaestroApp extends StatefulWidget {
 class _MaestroAppState extends State<MaestroApp> {
   AppSection _section = AppSection.dashboard;
   Student? _selectedStudent;
+  int? _selectedCourseId;
   Teacher? _teacher;
 
   @override
@@ -111,6 +112,7 @@ class _MaestroAppState extends State<MaestroApp> {
           api: widget.api,
           teacher: _teacher!,
           onOpenStudent: _openStudent,
+          onOpenLesson: _openLesson,
         ),
       AppSection.payments => PaymentsScreen(
           api: widget.api,
@@ -133,6 +135,7 @@ class _MaestroAppState extends State<MaestroApp> {
     return StudentProfileScreen(
       api: widget.api,
       studentId: _selectedStudent!.id,
+      initialCourseId: _selectedCourseId,
       onBack: () => setState(() => _selectedStudent = null),
     );
   }
@@ -141,6 +144,7 @@ class _MaestroAppState extends State<MaestroApp> {
     setState(() {
       _section = section;
       _selectedStudent = null;
+      _selectedCourseId = null;
     });
   }
 
@@ -148,6 +152,15 @@ class _MaestroAppState extends State<MaestroApp> {
     setState(() {
       _section = AppSection.students;
       _selectedStudent = student;
+      _selectedCourseId = null;
+    });
+  }
+
+  void _openLesson(Student student, int courseId) {
+    setState(() {
+      _section = AppSection.students;
+      _selectedStudent = student;
+      _selectedCourseId = courseId;
     });
   }
 

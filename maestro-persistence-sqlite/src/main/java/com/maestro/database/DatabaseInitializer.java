@@ -25,6 +25,7 @@ public class DatabaseInitializer {
          }
          runMigration(connection, 1, this::createInitialSchema);
          runMigration(connection, 2, this::addTeacherProfileColumns);
+         runMigration(connection, 3, this::addNoteReviewColumns);
       } catch (SQLException exception) {
          throw new IllegalStateException("Could not initialize database", exception);
       } finally {
@@ -120,11 +121,15 @@ public class DatabaseInitializer {
                   + "course_id INTEGER NOT NULL, "
                   + "piece TEXT NOT NULL DEFAULT '', "
                   + "comment TEXT NOT NULL DEFAULT '', "
+                  + "created_date TEXT, "
                   + "review_weeks INTEGER, "
                   + "review_date TEXT, "
                   + "review_status TEXT, "
                   + "source_course_id INTEGER NOT NULL DEFAULT 0, "
                   + "accepted_course_id INTEGER, "
+                  + "target_course_id INTEGER, "
+                  + "reviewed_date TEXT, "
+                  + "review_history TEXT NOT NULL DEFAULT '', "
                   + "sort_order INTEGER NOT NULL DEFAULT 0, "
                   + "FOREIGN KEY (student_id, course_id) REFERENCES courses(student_id, id) ON DELETE CASCADE)");
             statement.execute("CREATE TABLE IF NOT EXISTS payments ("
@@ -140,6 +145,10 @@ public class DatabaseInitializer {
          addColumnIfMissing(connection, "notes", "review_status", "TEXT");
          addColumnIfMissing(connection, "notes", "source_course_id", "INTEGER NOT NULL DEFAULT 0");
          addColumnIfMissing(connection, "notes", "accepted_course_id", "INTEGER");
+         addColumnIfMissing(connection, "notes", "created_date", "TEXT");
+         addColumnIfMissing(connection, "notes", "target_course_id", "INTEGER");
+         addColumnIfMissing(connection, "notes", "reviewed_date", "TEXT");
+         addColumnIfMissing(connection, "notes", "review_history", "TEXT NOT NULL DEFAULT ''");
          try (Statement statement = connection.createStatement()) {
             statement.execute("CREATE INDEX IF NOT EXISTS idx_students_teacher_id ON students(teacher_id)");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_projects_student_id ON projects(student_id)");
@@ -172,6 +181,13 @@ public class DatabaseInitializer {
                   + "ELSE last_name END")) {
          statement.executeUpdate();
       }
+   }
+
+   private void addNoteReviewColumns(Connection connection) throws SQLException {
+      addColumnIfMissing(connection, "notes", "created_date", "TEXT");
+      addColumnIfMissing(connection, "notes", "target_course_id", "INTEGER");
+      addColumnIfMissing(connection, "notes", "reviewed_date", "TEXT");
+      addColumnIfMissing(connection, "notes", "review_history", "TEXT NOT NULL DEFAULT ''");
    }
 
    private void runMigration(Connection connection, int version, Migration migration) throws SQLException {

@@ -18,11 +18,13 @@ class StudentProfileScreen extends StatefulWidget {
     required this.api,
     required this.studentId,
     required this.onBack,
+    this.initialCourseId,
   });
 
   final MaestroApi api;
   final int studentId;
   final VoidCallback onBack;
+  final int? initialCourseId;
 
   @override
   State<StudentProfileScreen> createState() => _StudentProfileScreenState();
@@ -32,12 +34,18 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   late Future<_ProfileData> _future;
   int _selectedTab = 0;
   final Set<int> _openCourses = {};
+  final Set<int> _creatingCourseProjectIds = {};
+  final Map<int, int> _selectedCourseIdsByProject = {};
+  _ProfileData? _profileData;
 
   static const _tabs = ['Courses', 'Projects / Pieces', 'Payments'];
 
   @override
   void initState() {
     super.initState();
+    if (widget.initialCourseId != null) {
+      _openCourses.add(widget.initialCourseId!);
+    }
     _future = _load();
   }
 
@@ -70,6 +78,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   }
 
   Widget _content(_ProfileData data) {
+    _profileData = data;
     final student = data.student;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -97,11 +106,22 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                 student: student,
                 payments: data.payments,
                 openCourses: _openCourses,
+                creatingCourseProjectIds: _creatingCourseProjectIds,
+                selectedCourseIdsByProject: _selectedCourseIdsByProject,
                 onAddCourse: _addCourse,
+                onSelectCourse: _selectCourse,
+                onEditSelectedCourse: _editSelectedCourse,
+                onDeleteSelectedCourse: _deleteSelectedCourse,
                 onEditCourse: _editCourse,
                 onDeleteCourse: _deleteCourse,
+                onDeleteProject: _deleteProject,
+                onAddPiece: _addPiece,
+                onEditPiece: _editPiece,
+                onDeletePiece: _deletePiece,
                 onSaveNote: _saveNote,
                 onDeleteNote: _deleteNote,
+                onMarkReviewReviewed: _markReviewReviewed,
+                onKeepReview: _keepReview,
               ),
               _ProjectsSection(
                 student: student,
@@ -145,7 +165,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   }
 
   void _refresh() {
-    setState(() => _future = _load());
+    setState(() {
+      _profileData = null;
+      _future = _load();
+    });
   }
 
   Future<void> _run(Future<void> Function() action) async {
@@ -153,6 +176,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       await action();
       if (mounted) _refresh();
     } catch (error) {
+      debugPrint('Student profile update failed: $error');
       if (mounted) _showMessage(_friendlyError(error));
     }
   }
@@ -218,9 +242,52 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   }
 
   Future<void> _addCourse(Student student, StudentProject project) async {
-    await _run(() async {
-      await widget.api.addCourse(student.id, project.id);
-    });
+    if (_creatingCourseProjectIds.contains(project.id)) return;
+    setState(() => _creatingCourseProjectIds.add(project.id));
+    try {
+      final updatedStudent = await widget.api.addCourse(student.id, project.id);
+      if (!mounted) return;
+      setState(() {
+        _creatingCourseProjectIds.remove(project.id);
+        _profileData =
+            (_profileData ?? _ProfileData(student: student, payments: const []))
+                .copyWith(student: updatedStudent);
+        _future = Future.value(_profileData);
+      });
+    } catch (error) {
+      debugPrint(
+          'Add course failed for student ${student.id}, project ${project.id}: $error');
+      if (!mounted) return;
+      setState(() => _creatingCourseProjectIds.remove(project.id));
+      _showMessage(_friendlyError(error));
+    }
+  }
+
+  void _selectCourse(StudentProject project, StudentCourse course) {
+    setState(() => _selectedCourseIdsByProject[project.id] = course.id);
+  }
+
+  Future<void> _editSelectedCourse(
+      Student student, StudentProject project) async {
+    final selected = _selectedCourse(student, project);
+    if (selected == null) return;
+    await _editCourse(student, project, selected);
+  }
+
+  Future<void> _deleteSelectedCourse(
+      Student student, StudentProject project) async {
+    final selected = _selectedCourse(student, project);
+    if (selected == null) return;
+    await _deleteCourse(student, project, selected);
+  }
+
+  StudentCourse? _selectedCourse(Student student, StudentProject project) {
+    final selectedId = _selectedCourseIdsByProject[project.id];
+    if (selectedId == null) return null;
+    for (final course in project.courses) {
+      if (course.id == selectedId) return course;
+    }
+    return null;
   }
 
   Future<void> _editCourse(
@@ -237,8 +304,12 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
 
   Future<void> _deleteCourse(
       Student student, StudentProject project, StudentCourse course) async {
-    final confirmed =
-        await _confirm('Delete Course', 'Delete ${course.title}?');
+    final courseNumber =
+        project.courses.indexWhere((item) => item.id == course.id) + 1;
+    final confirmed = await _confirm(
+      'Delete Course',
+      'Delete Course $courseNumber?\n\nThis will delete the selected course and its related course data.',
+    );
     if (!confirmed) return;
     await _run(() async {
       await widget.api.deleteCourse(student.id, project.id, course.id);
@@ -268,6 +339,20 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     if (!confirmed) return;
     await _run(() async {
       await widget.api.deleteNote(student.id, project.id, course.id, note.id);
+    });
+  }
+
+  Future<void> _markReviewReviewed(
+      Student student, StudentCourse course, CourseNote note) async {
+    await _run(() async {
+      await widget.api.markReviewReviewed(student.id, note.id, course.id);
+    });
+  }
+
+  Future<void> _keepReview(
+      Student student, StudentCourse course, CourseNote note) async {
+    await _run(() async {
+      await widget.api.keepReviewForNextCourse(student.id, note.id, course.id);
     });
   }
 
@@ -415,87 +500,225 @@ class _CoursesSection extends StatelessWidget {
     required this.student,
     required this.payments,
     required this.openCourses,
+    required this.creatingCourseProjectIds,
+    required this.selectedCourseIdsByProject,
     required this.onAddCourse,
+    required this.onSelectCourse,
+    required this.onEditSelectedCourse,
+    required this.onDeleteSelectedCourse,
     required this.onEditCourse,
     required this.onDeleteCourse,
+    required this.onDeleteProject,
+    required this.onAddPiece,
+    required this.onEditPiece,
+    required this.onDeletePiece,
     required this.onSaveNote,
     required this.onDeleteNote,
+    required this.onMarkReviewReviewed,
+    required this.onKeepReview,
   });
 
   final Student student;
   final List<Payment> payments;
   final Set<int> openCourses;
+  final Set<int> creatingCourseProjectIds;
+  final Map<int, int> selectedCourseIdsByProject;
   final Future<void> Function(Student, StudentProject) onAddCourse;
+  final void Function(StudentProject, StudentCourse) onSelectCourse;
+  final Future<void> Function(Student, StudentProject) onEditSelectedCourse;
+  final Future<void> Function(Student, StudentProject) onDeleteSelectedCourse;
   final Future<void> Function(Student, StudentProject, StudentCourse)
       onEditCourse;
   final Future<void> Function(Student, StudentProject, StudentCourse)
       onDeleteCourse;
+  final Future<void> Function(Student, StudentProject) onDeleteProject;
+  final Future<void> Function(Student, StudentProject) onAddPiece;
+  final Future<void> Function(Student, StudentProject, int) onEditPiece;
+  final Future<void> Function(Student, StudentProject, int) onDeletePiece;
   final Future<void> Function(
       Student, StudentProject, StudentCourse, CourseNote?) onSaveNote;
   final Future<void> Function(
       Student, StudentProject, StudentCourse, CourseNote) onDeleteNote;
+  final Future<void> Function(Student, StudentCourse, CourseNote)
+      onMarkReviewReviewed;
+  final Future<void> Function(Student, StudentCourse, CourseNote) onKeepReview;
 
   @override
   Widget build(BuildContext context) {
     return ListView(
       children: [
         for (final project in student.projects) ...[
-          MaestroCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        project.name,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w800),
+          Builder(builder: (context) {
+            final creatingCourse =
+                creatingCourseProjectIds.contains(project.id);
+            final selectedCourseId = selectedCourseIdsByProject[project.id];
+            final hasSelectedCourse =
+                project.courses.any((course) => course.id == selectedCourseId);
+            return MaestroCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          project.name,
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w800),
+                        ),
                       ),
-                    ),
-                    TextButton.icon(
-                      onPressed: () => onAddCourse(student, project),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Pieces:',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleSmall
+                        ?.copyWith(fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 6),
+                  if (project.pieces.isEmpty)
+                    const Text('No pieces yet')
+                  else
+                    for (var index = 0; index < project.pieces.length; index++)
+                      ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(project.pieces[index]),
+                        trailing: Wrap(
+                          spacing: 4,
+                          children: [
+                            IconButton(
+                              tooltip: 'Edit piece',
+                              icon: const Icon(Icons.edit),
+                              onPressed: () =>
+                                  onEditPiece(student, project, index),
+                            ),
+                            IconButton(
+                              tooltip: 'Delete piece',
+                              icon: const Icon(Icons.delete_outline),
+                              onPressed: () =>
+                                  onDeletePiece(student, project, index),
+                            ),
+                          ],
+                        ),
+                      ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => onAddPiece(student, project),
                       icon: const Icon(Icons.add),
-                      label: const Text('Add Course'),
+                      label: const Text('Add Piece'),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                if (project.courses.isEmpty)
-                  const _EmptyState(message: 'No courses yet')
-                else
-                  for (var index = 0; index < project.courses.length; index++)
-                    _CourseTile(
-                      student: student,
-                      project: project,
-                      course: project.courses[index],
-                      index: index,
-                      priceLeft: _priceLeft(project.courses, payments),
-                      initiallyOpen:
-                          openCourses.contains(project.courses[index].id),
-                      onOpenChanged: (open) {
-                        if (open) {
-                          openCourses.add(project.courses[index].id);
-                        } else {
-                          openCourses.remove(project.courses[index].id);
-                        }
-                      },
-                      onEdit: onEditCourse,
-                      onDelete: onDeleteCourse,
-                      onSaveNote: onSaveNote,
-                      onDeleteNote: onDeleteNote,
-                    ),
-              ],
-            ),
-          ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: creatingCourse
+                            ? null
+                            : () => onAddCourse(student, project),
+                        icon: creatingCourse
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.add),
+                        label: const Text('+ New Course'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: hasSelectedCourse
+                            ? () => onEditSelectedCourse(student, project)
+                            : null,
+                        icon: const Icon(Icons.edit),
+                        label: const Text('Edit Course'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: hasSelectedCourse
+                            ? () => onDeleteSelectedCourse(student, project)
+                            : null,
+                        icon: const Icon(Icons.delete_outline),
+                        label: const Text('Delete Course'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: student.projects.length <= 1
+                            ? null
+                            : () => onDeleteProject(student, project),
+                        icon: const Icon(Icons.delete_outline),
+                        label: const Text('Delete Project'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (project.courses.isEmpty)
+                    const _EmptyState(message: 'No courses yet')
+                  else
+                    for (var index = 0; index < project.courses.length; index++)
+                      _CourseTile(
+                        student: student,
+                        project: project,
+                        course: project.courses[index],
+                        index: index,
+                        selected: project.courses[index].id == selectedCourseId,
+                        priceLeft: _priceLeft(project.courses, payments),
+                        dueReviews: _dueReviewsForCourse(
+                            student, project.courses[index]),
+                        onSelect: onSelectCourse,
+                        initiallyOpen:
+                            openCourses.contains(project.courses[index].id),
+                        onOpenChanged: (open) {
+                          if (open) {
+                            openCourses.add(project.courses[index].id);
+                          } else {
+                            openCourses.remove(project.courses[index].id);
+                          }
+                        },
+                        onEdit: onEditCourse,
+                        onDelete: onDeleteCourse,
+                        onSaveNote: onSaveNote,
+                        onDeleteNote: onDeleteNote,
+                        onMarkReviewReviewed: onMarkReviewReviewed,
+                        onKeepReview: onKeepReview,
+                      ),
+                ],
+              ),
+            );
+          }),
           const SizedBox(height: 12),
         ],
         if (student.projects.isEmpty)
           const MaestroCard(child: _EmptyState(message: 'No projects yet')),
       ],
     );
+  }
+
+  List<CourseNote> _dueReviewsForCourse(Student student, StudentCourse course) {
+    final due = <CourseNote>[];
+    final courseDate = course.date;
+    for (final project in student.projects) {
+      for (final sourceCourse in project.courses) {
+        if (sourceCourse.id == course.id) continue;
+        for (final note in sourceCourse.notes) {
+          if (note.reviewStatus != 'PENDING') continue;
+          if (note.targetCourseId == course.id) {
+            due.add(note);
+          } else if (note.targetCourseId == null &&
+              note.reviewDate != null &&
+              courseDate != null &&
+              !note.reviewDate!.isAfter(courseDate)) {
+            due.add(note);
+          }
+        }
+      }
+    }
+    return due;
   }
 
   double _priceLeft(List<StudentCourse> courses, List<Payment> payments) {
@@ -516,20 +739,28 @@ class _CourseTile extends StatefulWidget {
     required this.project,
     required this.course,
     required this.index,
+    required this.selected,
     required this.priceLeft,
+    required this.dueReviews,
+    required this.onSelect,
     required this.initiallyOpen,
     required this.onOpenChanged,
     required this.onEdit,
     required this.onDelete,
     required this.onSaveNote,
     required this.onDeleteNote,
+    required this.onMarkReviewReviewed,
+    required this.onKeepReview,
   });
 
   final Student student;
   final StudentProject project;
   final StudentCourse course;
   final int index;
+  final bool selected;
   final double priceLeft;
+  final List<CourseNote> dueReviews;
+  final void Function(StudentProject, StudentCourse) onSelect;
   final bool initiallyOpen;
   final ValueChanged<bool> onOpenChanged;
   final Future<void> Function(Student, StudentProject, StudentCourse) onEdit;
@@ -538,6 +769,9 @@ class _CourseTile extends StatefulWidget {
       Student, StudentProject, StudentCourse, CourseNote?) onSaveNote;
   final Future<void> Function(
       Student, StudentProject, StudentCourse, CourseNote) onDeleteNote;
+  final Future<void> Function(Student, StudentCourse, CourseNote)
+      onMarkReviewReviewed;
+  final Future<void> Function(Student, StudentCourse, CourseNote) onKeepReview;
 
   @override
   State<_CourseTile> createState() => _CourseTileState();
@@ -551,109 +785,160 @@ class _CourseTileState extends State<_CourseTile> {
     final course = widget.course;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: const Color(0xFFF8FBFF),
-          border: Border.all(color: MaestroColors.border),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Course ${widget.index + 1}',
-                      style: const TextStyle(fontWeight: FontWeight.w800),
+      child: InkWell(
+        onTap: () => widget.onSelect(widget.project, course),
+        borderRadius: BorderRadius.circular(8),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: widget.selected
+                ? MaestroColors.subtleBlue
+                : const Color(0xFFF8FBFF),
+            border: Border.all(
+              color: widget.selected
+                  ? MaestroColors.primary
+                  : MaestroColors.border,
+              width: widget.selected ? 1.6 : 1,
+            ),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Row(
+                        children: [
+                          Icon(
+                            widget.selected
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_unchecked,
+                            color: widget.selected
+                                ? MaestroColors.primary
+                                : MaestroColors.muted,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Course ${widget.index + 1}',
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  StatusBadge(label: course.status),
-                  IconButton(
-                    tooltip: _open ? 'Close lesson' : 'Open lesson',
-                    onPressed: () {
-                      setState(() => _open = !_open);
-                      widget.onOpenChanged(_open);
-                    },
-                    icon: Icon(_open ? Icons.expand_less : Icons.expand_more),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 18,
-                runSpacing: 6,
-                children: [
-                  _Meta(label: 'Date', value: _date(course.date)),
-                  _Meta(label: 'Time', value: course.hour ?? 'No time'),
-                  _Meta(
-                      label: 'Price',
-                      value:
-                          NumberFormat.simpleCurrency().format(course.price)),
-                ],
-              ),
-              if (course.homeworkNextLesson.isNotEmpty) ...[
+                    StatusBadge(label: course.status),
+                    IconButton(
+                      tooltip: _open ? 'Close lesson' : 'Open lesson',
+                      onPressed: () {
+                        setState(() => _open = !_open);
+                        widget.onOpenChanged(_open);
+                      },
+                      icon: Icon(_open ? Icons.expand_less : Icons.expand_more),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 8),
-                Text('Homework: ${course.homeworkNextLesson}'),
-              ],
-              if (_open) ...[
-                const Divider(height: 24),
                 Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+                  spacing: 18,
+                  runSpacing: 6,
                   children: [
-                    OutlinedButton.icon(
-                      onPressed: () =>
-                          widget.onEdit(widget.student, widget.project, course),
-                      icon: const Icon(Icons.edit),
-                      label: const Text('Edit Course'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => _markPresent(context),
-                      icon: const Icon(Icons.fact_check_outlined),
-                      label: const Text('Change Status'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: () => widget.onDelete(
-                          widget.student, widget.project, course),
-                      icon: const Icon(Icons.delete_outline),
-                      label: const Text('Delete'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 20,
-                  runSpacing: 8,
-                  children: [
-                    _Meta(label: 'Day', value: course.day ?? 'No day'),
+                    _Meta(label: 'Date', value: _date(course.date)),
+                    _Meta(label: 'Time', value: course.hour ?? 'No time'),
                     _Meta(
-                        label: 'Price left',
-                        value: NumberFormat.simpleCurrency()
-                            .format(widget.priceLeft)),
-                    _Meta(label: 'Assignment', value: course.assignment),
+                        label: 'Price',
+                        value:
+                            NumberFormat.simpleCurrency().format(course.price)),
                   ],
                 ),
-                if (course.comment.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text('Description: ${course.comment}'),
-                ],
-                const SizedBox(height: 14),
-                _Notes(
-                  student: widget.student,
-                  project: widget.project,
-                  course: course,
-                  onSaveNote: widget.onSaveNote,
-                  onDeleteNote: widget.onDeleteNote,
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    setState(() => _open = !_open);
+                    widget.onOpenChanged(_open);
+                    debugPrint('Open lesson courseId=${course.id}');
+                  },
+                  icon: Icon(_open ? Icons.expand_less : Icons.open_in_new),
+                  label: Text(_open ? 'Close Lesson' : 'Open Lesson'),
                 ),
+                if (course.homeworkNextLesson.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text('Homework: ${course.homeworkNextLesson}'),
+                ],
+                if (_open) ...[
+                  const Divider(height: 24),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () => widget.onEdit(
+                            widget.student, widget.project, course),
+                        icon: const Icon(Icons.edit),
+                        label: const Text('Edit Course'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => _markPresent(context),
+                        icon: const Icon(Icons.fact_check_outlined),
+                        label: const Text('Change Status'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => widget.onDelete(
+                            widget.student, widget.project, course),
+                        icon: const Icon(Icons.delete_outline),
+                        label: const Text('Delete'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 20,
+                    runSpacing: 8,
+                    children: [
+                      _Meta(label: 'Day', value: course.day ?? 'No day'),
+                      _Meta(
+                          label: 'Price left',
+                          value: NumberFormat.simpleCurrency()
+                              .format(widget.priceLeft)),
+                      _Meta(label: 'Assignment', value: course.assignment),
+                    ],
+                  ),
+                  if (course.comment.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text('Description: ${course.comment}'),
+                  ],
+                  const SizedBox(height: 14),
+                  if (widget.dueReviews.isNotEmpty) ...[
+                    _ReviewSection(
+                      student: widget.student,
+                      course: course,
+                      reviews: widget.dueReviews,
+                      onReviewed: widget.onMarkReviewReviewed,
+                      onKeep: widget.onKeepReview,
+                      onEdit: (note) => _editReviewSource(note),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+                  _Notes(
+                    student: widget.student,
+                    project: widget.project,
+                    course: course,
+                    onSaveNote: widget.onSaveNote,
+                    onDeleteNote: widget.onDeleteNote,
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _editReviewSource(CourseNote note) async {
+    final source = _findCourseForNote(widget.student, note);
+    if (source == null) return;
+    await widget.onSaveNote(widget.student, source.$1, source.$2, note);
   }
 
   Future<void> _markPresent(BuildContext context) async {
@@ -738,6 +1023,8 @@ class _Notes extends StatelessWidget {
                 if (note.comment.isNotEmpty) note.comment,
                 if (note.reviewDate != null)
                   'Review ${DateFormat.yMMMd().format(note.reviewDate!)}',
+                if (note.createdDate != null)
+                  'Added ${DateFormat.yMMMd().format(note.createdDate!)}',
               ].join(' - ')),
               trailing: Wrap(
                 spacing: 4,
@@ -759,6 +1046,125 @@ class _Notes extends StatelessWidget {
       ],
     );
   }
+}
+
+class _ReviewSection extends StatelessWidget {
+  const _ReviewSection({
+    required this.student,
+    required this.course,
+    required this.reviews,
+    required this.onReviewed,
+    required this.onKeep,
+    required this.onEdit,
+  });
+
+  final Student student;
+  final StudentCourse course;
+  final List<CourseNote> reviews;
+  final Future<void> Function(Student, StudentCourse, CourseNote) onReviewed;
+  final Future<void> Function(Student, StudentCourse, CourseNote) onKeep;
+  final Future<void> Function(CourseNote) onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Review from previous lessons',
+          style: Theme.of(context)
+              .textTheme
+              .titleSmall
+              ?.copyWith(fontWeight: FontWeight.w900),
+        ),
+        const SizedBox(height: 8),
+        for (final note in reviews)
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: MaestroColors.warningBg,
+              border: Border.all(color: MaestroColors.warningText),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (note.piece.isNotEmpty)
+                  Text(note.piece,
+                      style: const TextStyle(fontWeight: FontWeight.w900)),
+                Text(note.comment.isEmpty ? 'No note text' : note.comment),
+                const SizedBox(height: 6),
+                Text(
+                  [
+                    'From: Course ${_courseNumberForId(student, note.sourceCourseId) ?? note.sourceCourseId}',
+                    if (note.createdDate != null)
+                      'Added: ${DateFormat.yMMMd().format(note.createdDate!)}',
+                  ].join(' - '),
+                  style: const TextStyle(color: MaestroColors.muted),
+                ),
+                if (note.reviewHistory.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    note.reviewHistory,
+                    style: const TextStyle(
+                      color: MaestroColors.muted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => onReviewed(student, course, note),
+                      icon: const Icon(Icons.check_circle_outline),
+                      label: const Text('Reviewed'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => onKeep(student, course, note),
+                      icon: const Icon(Icons.redo),
+                      label: const Text('Keep for next course'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: () => onEdit(note),
+                      icon: const Icon(Icons.edit),
+                      label: const Text('Edit'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+(StudentProject, StudentCourse)? _findCourseForNote(
+    Student student, CourseNote note) {
+  for (final project in student.projects) {
+    for (final course in project.courses) {
+      if (course.id == note.sourceCourseId ||
+          course.notes.any((candidate) => candidate.id == note.id)) {
+        return (project, course);
+      }
+    }
+  }
+  return null;
+}
+
+int? _courseNumberForId(Student student, int courseId) {
+  for (final project in student.projects) {
+    for (var index = 0; index < project.courses.length; index++) {
+      if (project.courses[index].id == courseId) {
+        return index + 1;
+      }
+    }
+  }
+  return null;
 }
 
 class _ProjectsSection extends StatelessWidget {
@@ -1208,10 +1614,10 @@ class _NoteDialogState extends State<_NoteDialog> {
               initialValue: _reviewWeeks,
               items: const [
                 DropdownMenuItem(value: 0, child: Text('No review')),
-                DropdownMenuItem(value: 1, child: Text('Next week')),
-                DropdownMenuItem(value: 2, child: Text('In 2 weeks')),
-                DropdownMenuItem(value: 3, child: Text('In 3 weeks')),
-                DropdownMenuItem(value: 4, child: Text('In 4 weeks')),
+                DropdownMenuItem(value: 1, child: Text('Next course')),
+                DropdownMenuItem(value: 2, child: Text('In 2 courses')),
+                DropdownMenuItem(value: 3, child: Text('In 3 courses')),
+                DropdownMenuItem(value: 4, child: Text('In 4 courses')),
               ],
               onChanged: (value) =>
                   setState(() => _reviewWeeks = value ?? _reviewWeeks),
@@ -1229,6 +1635,7 @@ class _NoteDialogState extends State<_NoteDialog> {
             'piece': _piece,
             'comment': _comment.text.trim(),
             'reviewWeeks': _reviewWeeks == 0 ? null : _reviewWeeks,
+            'targetCourseId': null,
           }),
           child: const Text('Save'),
         ),
@@ -1430,4 +1837,16 @@ class _ProfileData {
   final Student student;
   final List<Payment> payments;
   final Object? paymentsError;
+
+  _ProfileData copyWith({
+    Student? student,
+    List<Payment>? payments,
+    Object? paymentsError,
+  }) {
+    return _ProfileData(
+      student: student ?? this.student,
+      payments: payments ?? this.payments,
+      paymentsError: paymentsError ?? this.paymentsError,
+    );
+  }
 }

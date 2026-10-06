@@ -138,6 +138,17 @@ class MaestroApi {
         '/students/$studentId/projects/$projectId/courses/$courseId/notes/$noteId'));
   }
 
+  Future<Student> markReviewReviewed(int studentId, int noteId, int courseId) {
+    return _studentFromMap(_client
+        .postMap('/students/$studentId/reviews/$noteId/accept/$courseId', {}));
+  }
+
+  Future<Student> keepReviewForNextCourse(
+      int studentId, int noteId, int courseId) {
+    return _studentFromMap(_client.postMap(
+        '/students/$studentId/reviews/$noteId/reschedule/$courseId', {}));
+  }
+
   Future<Student> _studentFromMap(Future<Map<String, dynamic>> future) async {
     return Student.fromJson(await future);
   }
