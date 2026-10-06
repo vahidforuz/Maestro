@@ -33,17 +33,17 @@ public class ReviewController {
 
    @GetMapping("/due/{courseId}")
    public List<ReviewService.DueReview> dueReviews(
-         @PathVariable int studentId,
-         @PathVariable int courseId) {
+         @PathVariable("studentId") int studentId,
+         @PathVariable("courseId") int courseId) {
       Student student = requireStudent(studentId);
       return reviewService.getDueReviews(student, requireCourse(student, courseId));
    }
 
    @PostMapping("/{noteId}/accept/{courseId}")
    public CourseNote accept(
-         @PathVariable int studentId,
-         @PathVariable int noteId,
-         @PathVariable int courseId) {
+         @PathVariable("studentId") int studentId,
+         @PathVariable("noteId") int noteId,
+         @PathVariable("courseId") int courseId) {
       Student student = requireStudent(studentId);
       CourseNote note = requireNote(student, noteId);
       CourseNote accepted = reviewService.acceptReview(student, requireCourse(student, courseId), note);
@@ -52,7 +52,7 @@ public class ReviewController {
    }
 
    @PostMapping("/{noteId}/dismiss")
-   public void dismiss(@PathVariable int studentId, @PathVariable int noteId) {
+   public void dismiss(@PathVariable("studentId") int studentId, @PathVariable("noteId") int noteId) {
       Student student = requireStudent(studentId);
       reviewService.dismissReview(student, requireNote(student, noteId));
       studentRepository.update(student);

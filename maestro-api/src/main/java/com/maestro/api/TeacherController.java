@@ -33,7 +33,7 @@ public class TeacherController {
    }
 
    @GetMapping("/{id}")
-   public Teacher findById(@PathVariable int id) {
+   public Teacher findById(@PathVariable("id") int id) {
       Teacher teacher = teacherService.findTeacherById(id);
       if (teacher == null) {
          throw new ResponseStatusException(HttpStatus.NOT_FOUND);
@@ -50,7 +50,7 @@ public class TeacherController {
    }
 
    @PutMapping("/{id}")
-   public Teacher update(@PathVariable int id, @RequestBody TeacherRequest request) {
+   public Teacher update(@PathVariable("id") int id, @RequestBody TeacherRequest request) {
       if (teacherRepository.findById(id).isEmpty()) {
          throw new ResponseStatusException(HttpStatus.NOT_FOUND);
       }
@@ -61,7 +61,7 @@ public class TeacherController {
 
    @DeleteMapping("/{id}")
    @ResponseStatus(HttpStatus.NO_CONTENT)
-   public void delete(@PathVariable int id) {
+   public void delete(@PathVariable("id") int id) {
       teacherRepository.deleteById(id);
    }
 
@@ -69,9 +69,59 @@ public class TeacherController {
       return teacherRepository.findAll().stream().mapToInt(Teacher::getId).max().orElse(0) + 1;
    }
 
-   public record TeacherRequest(Integer id, String name, String telephone, String email, String address) {
+   public record TeacherRequest(
+         Integer id,
+         String name,
+         String telephone,
+         String email,
+         String address,
+         String firstName,
+         String lastName,
+         String studioName,
+         String city,
+         String postalCode,
+         String mainInstrument,
+         String otherInstruments,
+         Integer defaultLessonDuration,
+         Double defaultLessonPrice,
+         String currency,
+         String profileImagePath) {
       Teacher toTeacher(int teacherId) {
-         return new Teacher(teacherId, name, telephone, email, address);
+         Teacher teacher = new Teacher(teacherId, name, telephone, email, address);
+         if (firstName != null) {
+            teacher.setFirstName(firstName);
+         }
+         if (lastName != null) {
+            teacher.setLastName(lastName);
+         }
+         if (studioName != null) {
+            teacher.setStudioName(studioName);
+         }
+         if (city != null) {
+            teacher.setCity(city);
+         }
+         if (postalCode != null) {
+            teacher.setPostalCode(postalCode);
+         }
+         if (mainInstrument != null) {
+            teacher.setMainInstrument(mainInstrument);
+         }
+         if (otherInstruments != null) {
+            teacher.setOtherInstruments(otherInstruments);
+         }
+         if (defaultLessonDuration != null) {
+            teacher.setDefaultLessonDuration(defaultLessonDuration);
+         }
+         if (defaultLessonPrice != null) {
+            teacher.setDefaultLessonPrice(defaultLessonPrice);
+         }
+         if (currency != null) {
+            teacher.setCurrency(currency);
+         }
+         if (profileImagePath != null) {
+            teacher.setProfileImagePath(profileImagePath);
+         }
+         return teacher;
       }
    }
 }

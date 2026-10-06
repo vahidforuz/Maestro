@@ -33,13 +33,13 @@ public class PaymentController {
    }
 
    @GetMapping("/students/{studentId}/payments")
-   public List<Payment> findByStudent(@PathVariable int studentId) {
+   public List<Payment> findByStudent(@PathVariable("studentId") int studentId) {
       return paymentService.getPaymentsByStudent(requireStudent(studentId));
    }
 
    @PostMapping("/students/{studentId}/payments")
    @ResponseStatus(HttpStatus.CREATED)
-   public Payment create(@PathVariable int studentId, @RequestBody PaymentRequest request) {
+   public Payment create(@PathVariable("studentId") int studentId, @RequestBody PaymentRequest request) {
       Student student = requireStudent(studentId);
       Payment payment = new Payment(student, request.amount(), request.paymentDate(), request.method(), request.note());
       paymentService.addPayment(payment);
