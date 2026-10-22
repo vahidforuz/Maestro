@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/course_note.dart';
 import '../models/payment.dart';
 import '../models/student.dart';
 import '../models/student_course.dart';
 import '../models/student_project.dart';
-import '../services/api_client.dart';
-import '../services/maestro_api.dart';
+import '../services/maestro_data_source.dart';
 import '../theme/maestro_theme.dart';
 import '../widgets/maestro_card.dart';
 import '../widgets/status_badge.dart';
@@ -21,7 +21,7 @@ class StudentProfileScreen extends StatefulWidget {
     this.initialCourseId,
   });
 
-  final MaestroApi api;
+  final MaestroDataSource api;
   final int studentId;
   final VoidCallback onBack;
   final int? initialCourseId;
@@ -417,13 +417,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   }
 
   String _friendlyError(Object? error) {
-    if (error is ApiException) {
-      if (error.statusCode == 404) {
-        return 'The requested profile was not found.';
-      }
-      return 'The profile could not be updated. Please try again.';
-    }
-    return 'Something went wrong. Please try again.';
+    if (error is PostgrestException) return error.message;
+    if (error is StateError) return error.message;
+    return error?.toString() ?? 'Something went wrong. Please try again.';
   }
 }
 
@@ -1575,7 +1571,7 @@ class _NoteDialog extends StatefulWidget {
 class _NoteDialogState extends State<_NoteDialog> {
   late String _piece = widget.note?.piece.isNotEmpty == true
       ? widget.note!.piece
-      : widget.project.pieces.first;
+      : (widget.project.pieces.isEmpty ? '' : widget.project.pieces.first);
   late final _comment = TextEditingController(text: widget.note?.comment ?? '');
   late int _reviewWeeks = widget.note?.reviewWeeks ?? 0;
 
@@ -1587,6 +1583,8 @@ class _NoteDialogState extends State<_NoteDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final pieceChoices = <String>{...widget.project.pieces,
+      if (_piece.isNotEmpty) _piece}.toList();
     return AlertDialog(
       title: Text(widget.note == null ? 'Add Note' : 'Edit Note'),
       content: SizedBox(
@@ -1594,15 +1592,18 @@ class _NoteDialogState extends State<_NoteDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            DropdownButtonFormField<String>(
-              initialValue: _piece,
-              items: widget.project.pieces
-                  .map((piece) =>
-                      DropdownMenuItem(value: piece, child: Text(piece)))
-                  .toList(),
-              onChanged: (value) => setState(() => _piece = value ?? _piece),
-              decoration: const InputDecoration(labelText: 'Piece'),
-            ),
+            if (pieceChoices.isEmpty)
+              TextFormField(initialValue: _piece,
+                onChanged: (value) => _piece = value,
+                decoration: const InputDecoration(labelText: 'Piece'))
+            else
+              DropdownButtonFormField<String>(
+                initialValue: _piece,
+                items: pieceChoices.map((piece) =>
+                    DropdownMenuItem(value: piece, child: Text(piece))).toList(),
+                onChanged: (value) => setState(() => _piece = value ?? _piece),
+                decoration: const InputDecoration(labelText: 'Piece'),
+              ),
             const SizedBox(height: 10),
             TextField(
               controller: _comment,

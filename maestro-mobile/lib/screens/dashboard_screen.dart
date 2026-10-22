@@ -4,7 +4,7 @@ import 'package:intl/intl.dart';
 import '../models/payment.dart';
 import '../models/student.dart';
 import '../models/teacher.dart';
-import '../services/maestro_api.dart';
+import '../services/maestro_data_source.dart';
 import '../services/studio_metrics.dart';
 import '../theme/maestro_theme.dart';
 import '../widgets/async_state.dart';
@@ -23,7 +23,7 @@ class DashboardScreen extends StatefulWidget {
     required this.onAddStudent,
   });
 
-  final MaestroApi api;
+  final MaestroDataSource api;
   final Teacher teacher;
   final VoidCallback onOpenStudents;
   final ValueChanged<Student> onOpenStudent;
@@ -124,33 +124,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
         LayoutBuilder(
           builder: (context, constraints) {
             final twoColumn = constraints.maxWidth >= 900;
-            final children = [
-              Expanded(
-                  child: _TodayCard(
-                      students: students, onOpenStudent: widget.onOpenStudent)),
-              const SizedBox(width: 16, height: 16),
-              Expanded(
-                  child: _ReviewCard(
-                      students: students, onOpenStudent: widget.onOpenStudent)),
-              const SizedBox(width: 16, height: 16),
-              Expanded(
-                  child: _PaymentAttentionCard(
-                      students: students,
-                      payments: payments,
-                      onOpenStudent: widget.onOpenStudent)),
-            ];
+            final today = _TodayCard(
+                students: students, onOpenStudent: widget.onOpenStudent);
+            final reviews = _ReviewCard(
+                students: students, onOpenStudent: widget.onOpenStudent);
+            final paymentAttention = _PaymentAttentionCard(
+                students: students,
+                payments: payments,
+                onOpenStudent: widget.onOpenStudent);
             if (twoColumn) {
               return Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: children);
+                  children: [
+                    Expanded(child: today),
+                    const SizedBox(width: 16),
+                    Expanded(child: reviews),
+                    const SizedBox(width: 16),
+                    Expanded(child: paymentAttention),
+                  ]);
             }
             return Column(
               children: [
-                children[0],
-                children[1],
-                children[2],
-                children[3],
-                children[4],
+                today,
+                const SizedBox(height: 16),
+                reviews,
+                const SizedBox(height: 16),
+                paymentAttention,
               ],
             );
           },

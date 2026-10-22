@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 
 import '../models/student.dart';
 import '../models/teacher.dart';
-import '../services/maestro_api.dart';
+import '../services/maestro_data_source.dart';
+import '../services/teacher_auth.dart';
 import '../theme/maestro_theme.dart';
 import 'app_section.dart';
 import 'calendar_screen.dart';
@@ -14,9 +16,10 @@ import 'students_screen.dart';
 import 'teacher_gate_screen.dart';
 
 class MaestroApp extends StatefulWidget {
-  const MaestroApp({super.key, required this.api});
+  const MaestroApp({super.key, required this.api, required this.auth});
 
-  final MaestroApi api;
+  final MaestroDataSource api;
+  final TeacherAuth auth;
 
   @override
   State<MaestroApp> createState() => _MaestroAppState();
@@ -27,6 +30,40 @@ class _MaestroAppState extends State<MaestroApp> {
   Student? _selectedStudent;
   int? _selectedCourseId;
   Teacher? _teacher;
+  StreamSubscription<bool>? _authSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _authSubscription = widget.auth.sessionChanges.listen((signedIn) {
+      if (!signedIn && mounted) _clearTeacher();
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _clearTeacher() => setState(() {
+    _teacher = null;
+    _selectedStudent = null;
+    _section = AppSection.dashboard;
+  });
+
+  Future<void> _signOut() async {
+    try {
+      await widget.auth.signOut();
+      if (mounted) _clearTeacher();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not sign out: $error')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,6 +71,7 @@ class _MaestroAppState extends State<MaestroApp> {
       return Scaffold(
         body: TeacherGateScreen(
           api: widget.api,
+          auth: widget.auth,
           onSignedIn: (teacher) => setState(() => _teacher = teacher),
         ),
       );
@@ -122,11 +160,7 @@ class _MaestroAppState extends State<MaestroApp> {
           api: widget.api,
           teacher: _teacher!,
           onTeacherChanged: (teacher) => setState(() => _teacher = teacher),
-          onSignOut: () => setState(() {
-            _teacher = null;
-            _selectedStudent = null;
-            _section = AppSection.dashboard;
-          }),
+          onSignOut: _signOut,
         ),
     };
   }

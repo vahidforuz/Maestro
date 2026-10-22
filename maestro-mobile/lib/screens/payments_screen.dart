@@ -4,7 +4,7 @@ import 'package:intl/intl.dart';
 import '../models/payment.dart';
 import '../models/student.dart';
 import '../models/teacher.dart';
-import '../services/maestro_api.dart';
+import '../services/maestro_data_source.dart';
 import '../services/studio_metrics.dart';
 import '../theme/maestro_theme.dart';
 import '../widgets/async_state.dart';
@@ -18,7 +18,7 @@ class PaymentsScreen extends StatefulWidget {
     required this.teacher,
   });
 
-  final MaestroApi api;
+  final MaestroDataSource api;
   final Teacher teacher;
 
   @override
@@ -189,7 +189,7 @@ class _PaymentsScreenState extends State<PaymentsScreen> {
 class _PaymentDialog extends StatefulWidget {
   const _PaymentDialog({required this.api, required this.students});
 
-  final MaestroApi api;
+  final MaestroDataSource api;
   final List<Student> students;
 
   @override
@@ -203,6 +203,7 @@ class _PaymentDialogState extends State<_PaymentDialog> {
   final _note = TextEditingController();
   DateTime _date = DateTime.now();
   bool _saving = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -251,6 +252,8 @@ class _PaymentDialogState extends State<_PaymentDialog> {
               trailing: const Icon(Icons.calendar_month),
               onTap: _pickDate,
             ),
+            if (_error != null) Text(_error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error)),
           ],
         ),
       ),
@@ -276,15 +279,24 @@ class _PaymentDialogState extends State<_PaymentDialog> {
 
   Future<void> _save() async {
     final amount = double.tryParse(_amount.text.trim());
-    if (amount == null) return;
-    setState(() => _saving = true);
-    await widget.api.createPayment(_student.id, {
-      'amount': amount,
-      'paymentDate': DateFormat('yyyy-MM-dd').format(_date),
-      'method': _method.text.trim(),
-      'note': _note.text.trim(),
-    });
-    if (mounted) Navigator.pop(context, true);
+    if (amount == null) {
+      setState(() => _error = 'Amount must be a number.');
+      return;
+    }
+    setState(() { _saving = true; _error = null; });
+    try {
+      await widget.api.createPayment(_student.id, {
+        'amount': amount,
+        'paymentDate': DateFormat('yyyy-MM-dd').format(_date),
+        'method': _method.text.trim(),
+        'note': _note.text.trim(),
+      });
+      if (mounted) Navigator.pop(context, true);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 }
 

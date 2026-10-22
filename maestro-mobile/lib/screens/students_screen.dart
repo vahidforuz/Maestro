@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/student.dart';
 import '../models/teacher.dart';
-import '../services/maestro_api.dart';
+import '../services/maestro_data_source.dart';
 import '../services/studio_metrics.dart';
 import '../theme/maestro_theme.dart';
 import '../widgets/async_state.dart';
@@ -18,7 +18,7 @@ class StudentsScreen extends StatefulWidget {
     required this.onOpenStudent,
   });
 
-  final MaestroApi api;
+  final MaestroDataSource api;
   final Teacher teacher;
   final ValueChanged<Student> onOpenStudent;
 
@@ -124,7 +124,7 @@ class _StudentsScreenState extends State<StudentsScreen> {
 
 Future<Student?> showAddStudentDialog(
   BuildContext context, {
-  required MaestroApi api,
+  required MaestroDataSource api,
   required Teacher teacher,
 }) {
   return showDialog<Student>(
@@ -180,7 +180,7 @@ class _StudentTable extends StatelessWidget {
 class _StudentDialog extends StatefulWidget {
   const _StudentDialog({required this.api, required this.teacher});
 
-  final MaestroApi api;
+  final MaestroDataSource api;
   final Teacher teacher;
 
   @override

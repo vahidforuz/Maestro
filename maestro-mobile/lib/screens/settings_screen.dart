@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/teacher.dart';
-import '../services/maestro_api.dart';
+import '../services/maestro_data_source.dart';
 import '../widgets/maestro_card.dart';
 import '../widgets/section_header.dart';
 
@@ -14,7 +14,7 @@ class SettingsScreen extends StatefulWidget {
     required this.onSignOut,
   });
 
-  final MaestroApi api;
+  final MaestroDataSource api;
   final Teacher teacher;
   final ValueChanged<Teacher> onTeacherChanged;
   final VoidCallback onSignOut;
@@ -216,29 +216,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     setState(() => _saving = true);
     final name = '${_firstName.text.trim()} ${_lastName.text.trim()}'.trim();
-    final updated = await widget.api.updateTeacher(widget.teacher.id, {
-      'id': widget.teacher.id,
-      'name': name.isEmpty ? widget.teacher.displayName : name,
-      'firstName': _firstName.text.trim(),
-      'lastName': _lastName.text.trim(),
-      'studioName': _studioName.text.trim(),
-      'email': _email.text.trim(),
-      'telephone': _phone.text.trim(),
-      'address': _address.text.trim(),
-      'city': _city.text.trim(),
-      'postalCode': _postalCode.text.trim(),
-      'mainInstrument': _mainInstrument.text.trim(),
-      'otherInstruments': _otherInstruments.text.trim(),
-      'defaultLessonDuration': duration,
-      'defaultLessonPrice': price,
-      'currency': _currency.text.trim(),
-      'profileImagePath': widget.teacher.profileImagePath,
-    });
-    if (!mounted) return;
-    setState(() {
-      _saving = false;
-      _editing = false;
-    });
-    widget.onTeacherChanged(updated);
+    try {
+      final updated = await widget.api.updateTeacher(widget.teacher.id, {
+        'id': widget.teacher.id,
+        'name': name.isEmpty ? widget.teacher.displayName : name,
+        'firstName': _firstName.text.trim(),
+        'lastName': _lastName.text.trim(),
+        'studioName': _studioName.text.trim(),
+        'email': _email.text.trim(),
+        'telephone': _phone.text.trim(),
+        'address': _address.text.trim(),
+        'city': _city.text.trim(),
+        'postalCode': _postalCode.text.trim(),
+        'mainInstrument': _mainInstrument.text.trim(),
+        'otherInstruments': _otherInstruments.text.trim(),
+        'defaultLessonDuration': duration,
+        'defaultLessonPrice': price,
+        'currency': _currency.text.trim(),
+        'profileImagePath': widget.teacher.profileImagePath,
+      });
+      if (!mounted) return;
+      setState(() => _editing = false);
+      widget.onTeacherChanged(updated);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not save teacher profile: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 }

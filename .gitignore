@@ -25,3 +25,19 @@ replay_pid*
 
 # Local app data
 data/
+
+# Local Flutter/IDE metadata
+maestro-mobile/.idea/
+*.iml
+maestro-mobile/.local.flutter.*.json
+
+# Environment-specific client defines and server-side secrets
+maestro-mobile/.staging.flutter.json
+maestro-mobile/.production.flutter.json
+**/.env
+**/.env.*
+!**/.env.example
+
+# Python helper artifacts
+__pycache__/
+*.pyc

@@ -1,47 +1,51 @@
-# Maestro Mobile
+# Maestro Flutter
 
-Flutter client for the existing Maestro Spring Boot REST API.
+Flutter teacher application for local Supabase Auth and PostgreSQL. The dashboard, students, student profile, calendar, payments, settings, lesson attendance, notes, and reviews use `SupabaseMaestroDataSource`. Spring Boot is not needed to run this Flutter application.
 
-This module is intentionally separate from the JavaFX desktop app. It does not duplicate Java business logic; it reads and writes Maestro data through REST/JSON.
-
-## Run the API
+## Local Supabase setup
 
 From the repository root:
 
-```sh
-mvn -pl maestro-api -am spring-boot:run
+```bash
+npx --yes supabase start
+npx --yes supabase migration up --local
+python3 scripts/write_local_flutter_config.py
 ```
 
-The API defaults to `http://localhost:8080/api`.
+The script creates ignored Dart-define files with the local Supabase URL and **public** publishable key. It does not write privileged keys. It does not reset the database.
 
-## Run Flutter
+## Chrome
 
-From this folder:
+From `maestro-mobile/`:
 
-```sh
+```bash
 flutter pub get
-flutter run -d chrome --dart-define=MAESTRO_API_BASE_URL=http://localhost:8080/api
+flutter run -d chrome --web-port=7357 --dart-define-from-file=.local.flutter.web.json
 ```
 
-For Android emulator, use the host bridge:
+Open <http://localhost:7357>. The backend API is <http://127.0.0.1:54321>; Supabase Studio is <http://127.0.0.1:54323>. For local synthetic data, sign in as `ada.teacher@maestro.example` or `ben.teacher@maestro.example` with password `LocalMaestro123!`.
 
-```sh
-flutter run -d android --dart-define=MAESTRO_API_BASE_URL=http://10.0.2.2:8080/api
+## Windows desktop
+
+With Windows Flutter and Visual Studio C++ desktop tools installed, and the same local Supabase stack reachable from Windows PowerShell:
+
+```powershell
+cd path\to\Maestro\maestro-mobile
+flutter pub get
+flutter run -d windows --dart-define-from-file=.local.flutter.windows.json
 ```
 
-For iOS, generate the Xcode platform directory with the Flutter toolchain before the first run:
+Windows runtime testing remains outstanding. A separate Windows checkout needs its own ignored public define file generated from the same local stack.
 
-```sh
-flutter create --platforms=ios .
-flutter run -d ios --dart-define=MAESTRO_API_BASE_URL=http://localhost:8080/api
+## Other targets and checks
+
+The Android emulator uses `.local.flutter.android.json` (`10.0.2.2:54321`). iOS requires Xcode on macOS. macOS and Linux runner generation and runtime checks remain.
+
+```bash
+flutter analyze
+flutter test --dart-define-from-file=.local.flutter.web.json
+flutter test --platform chrome --dart-define-from-file=.local.flutter.web.json
+flutter build web --dart-define-from-file=.local.flutter.web.json
 ```
 
-## Implemented increment
-
-- Maestro theme and logo asset
-- REST API client
-- Dashboard
-- Students list
-- Student Profile
-
-Remaining sections are wired into navigation as placeholders for future API-backed increments.
+See [local development](../docs/local-development.md), [cutover status](../docs/supabase-flutter-cutover.md), and [migration status](../docs/supabase-migration-status.md) for remaining work and deployment blockers.

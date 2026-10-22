@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
 
 import '../models/teacher.dart';
-import '../services/maestro_api.dart';
-import '../theme/maestro_theme.dart';
-import '../widgets/async_state.dart';
+import '../services/maestro_data_source.dart';
+import '../services/teacher_auth.dart';
 import '../widgets/maestro_card.dart';
 import '../widgets/section_header.dart';
 
 class TeacherGateScreen extends StatefulWidget {
-  const TeacherGateScreen({
-    super.key,
-    required this.api,
-    required this.onSignedIn,
-  });
+  const TeacherGateScreen(
+      {super.key,
+      required this.api,
+      required this.auth,
+      required this.onSignedIn});
 
-  final MaestroApi api;
+  final MaestroDataSource api;
+  final TeacherAuth auth;
   final ValueChanged<Teacher> onSignedIn;
 
   @override
@@ -22,147 +22,221 @@ class TeacherGateScreen extends StatefulWidget {
 }
 
 class _TeacherGateScreenState extends State<TeacherGateScreen> {
-  late Future<List<Teacher>> _future;
-  final _idController = TextEditingController();
+  final _email = TextEditingController();
+  final _password = TextEditingController();
   bool _busy = false;
+  bool _checking = true;
+  bool _needsProfile = false;
+  bool _blockedAccount = false;
+  String? _message;
 
   @override
   void initState() {
     super.initState();
-    _future = widget.api.fetchTeachers();
+    _restore();
   }
 
   @override
   void dispose() {
-    _idController.dispose();
+    _email.dispose();
+    _password.dispose();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: FutureBuilder<List<Teacher>>(
-              future: _future,
-              builder: (context, snapshot) {
-                return AsyncState<List<Teacher>>(
-                  snapshot: snapshot,
-                  builder: (teachers) => MaestroCard(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const SectionHeader(
-                          title: 'Maestro',
-                          subtitle:
-                              'Sign in with a teacher account to continue.',
-                        ),
-                        const SizedBox(height: 18),
-                        TextField(
-                          controller: _idController,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'Teacher ID',
-                            prefixIcon: Icon(Icons.badge_outlined),
-                          ),
-                          onSubmitted: (_) => _signInById(),
-                        ),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: [
-                            ElevatedButton.icon(
-                              onPressed: _busy ? null : _signInById,
-                              icon: const Icon(Icons.login),
-                              label: const Text('Sign In'),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed:
-                                  _busy ? null : _showCreateTeacherDialog,
-                              icon: const Icon(Icons.person_add_alt),
-                              label: const Text('Create Teacher Account'),
-                            ),
-                          ],
-                        ),
-                        if (teachers.isNotEmpty) ...[
-                          const SizedBox(height: 20),
-                          Text(
-                            'Available teachers',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleMedium
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                ),
-                          ),
-                          const SizedBox(height: 8),
-                          for (final teacher in teachers)
-                            ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              leading: CircleAvatar(
-                                backgroundColor: MaestroColors.subtleBlue,
-                                child: Text(teacher.id.toString()),
-                              ),
-                              title: Text(teacher.displayName),
-                              subtitle: Text(
-                                  teacher.email ?? 'Teacher ID ${teacher.id}'),
-                              trailing: const Icon(Icons.chevron_right),
-                              onTap: () => widget.onSignedIn(teacher),
-                            ),
-                        ],
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _signInById() async {
-    final id = int.tryParse(_idController.text.trim());
-    if (id == null) {
-      _showMessage('Teacher ID must be a number.');
+  Future<void> _restore() async {
+    if (!widget.auth.hasSession) {
+      if (mounted) {
+        setState(() {
+          _checking = false;
+          _needsProfile = false;
+          _blockedAccount = false;
+        });
+      }
       return;
     }
-    setState(() => _busy = true);
     try {
-      widget.onSignedIn(await widget.api.fetchTeacher(id));
+      final teachers = await widget.api.fetchTeachers();
+      if (!mounted) return;
+      if (teachers.isNotEmpty) {
+        widget.onSignedIn(teachers.first);
+      } else {
+        final canCreate = await widget.auth.canCreateTeacherProfile();
+        if (!mounted) return;
+        setState(() {
+          _needsProfile = canCreate;
+          _blockedAccount = !canCreate;
+          if (!canCreate) {
+            _message = 'This account is not linked to a teacher profile.';
+          }
+        });
+      }
     } catch (error) {
-      _showMessage('Teacher not found.');
+      if (mounted) {
+        setState(() {
+          _blockedAccount = true;
+          _message = 'Could not load the teacher profile: $error';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _checking = false);
+    }
+  }
+
+  Future<void> _signIn() async {
+    if (_email.text.trim().isEmpty || _password.text.isEmpty) {
+      setState(() => _message = 'Enter your email and password.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    try {
+      await widget.auth.signIn(_email.text.trim(), _password.text);
+      await _restore();
+    } catch (error) {
+      if (mounted) setState(() => _message = 'Sign in failed: $error');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _showCreateTeacherDialog() async {
-    final teacher = await showDialog<Teacher>(
-      context: context,
-      builder: (context) => _TeacherDialog(api: widget.api),
-    );
-    if (teacher != null) {
-      widget.onSignedIn(teacher);
+  Future<void> _signUp() async {
+    if (_email.text.trim().isEmpty || _password.text.length < 6) {
+      setState(() =>
+          _message = 'Enter an email and a password of at least 6 characters.');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    try {
+      final signedIn =
+          await widget.auth.signUp(_email.text.trim(), _password.text);
+      if (signedIn) {
+        await _restore();
+      } else if (mounted) {
+        setState(() => _message =
+            'Check your email to confirm the account, then sign in.');
+      }
+    } catch (error) {
+      if (mounted) setState(() => _message = 'Account creation failed: $error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
-  void _showMessage(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+  Future<void> _createProfile() async {
+    final teacher = await showDialog<Teacher>(
+        context: context,
+        builder: (context) => _TeacherDialog(
+            api: widget.api, initialEmail: widget.auth.email ?? ''));
+    if (teacher != null && mounted) widget.onSignedIn(teacher);
   }
+
+  Future<void> _signOut() async {
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    try {
+      await widget.auth.signOut();
+      if (mounted) {
+        setState(() {
+          _needsProfile = false;
+          _blockedAccount = false;
+        });
+      }
+    } catch (error) {
+      if (mounted) setState(() => _message = 'Sign out failed: $error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+          child: Center(
+              child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: MaestroCard(
+              child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SectionHeader(
+                        title: 'Maestro',
+                        subtitle:
+                            'Sign in with your teacher account to continue.'),
+                    const SizedBox(height: 18),
+                    if (_checking)
+                      const Center(child: CircularProgressIndicator()),
+                    if (!_checking && !_needsProfile && !_blockedAccount) ...[
+                      TextField(
+                          controller: _email,
+                          keyboardType: TextInputType.emailAddress,
+                          autofillHints: const [AutofillHints.email],
+                          decoration:
+                              const InputDecoration(labelText: 'Email')),
+                      const SizedBox(height: 12),
+                      TextField(
+                          controller: _password,
+                          obscureText: true,
+                          autofillHints: const [AutofillHints.password],
+                          onSubmitted: (_) => _signIn(),
+                          decoration:
+                              const InputDecoration(labelText: 'Password')),
+                      const SizedBox(height: 16),
+                      Wrap(spacing: 10, runSpacing: 10, children: [
+                        ElevatedButton.icon(
+                            onPressed: _busy ? null : _signIn,
+                            icon: const Icon(Icons.login),
+                            label: const Text('Sign In')),
+                        OutlinedButton.icon(
+                            onPressed: _busy ? null : _signUp,
+                            icon: const Icon(Icons.person_add_alt),
+                            label: const Text('Create Account')),
+                      ]),
+                    ],
+                    if (!_checking && _needsProfile) ...[
+                      Text('Signed in as ${widget.auth.email ?? 'teacher'}.'),
+                      const SizedBox(height: 12),
+                      const Text('Create your teacher profile to continue.'),
+                      const SizedBox(height: 12),
+                      Wrap(spacing: 10, children: [
+                        ElevatedButton.icon(
+                            onPressed: _busy ? null : _createProfile,
+                            icon: const Icon(Icons.person_add_alt),
+                            label: const Text('Create Teacher Profile')),
+                        TextButton(
+                            onPressed: _busy ? null : _signOut,
+                            child: const Text('Sign Out')),
+                      ]),
+                    ],
+                    if (!_checking && _blockedAccount) ...[
+                      Text('Signed in as ${widget.auth.email ?? 'account'}.'),
+                      TextButton(
+                          onPressed: _busy ? null : _signOut,
+                          child: const Text('Sign Out')),
+                    ],
+                    if (_message != null) ...[
+                      const SizedBox(height: 12),
+                      Text(_message!,
+                          style: TextStyle(
+                              color: Theme.of(context).colorScheme.error)),
+                    ],
+                  ]),
+            )),
+      )));
 }
 
 class _TeacherDialog extends StatefulWidget {
-  const _TeacherDialog({required this.api});
-
-  final MaestroApi api;
+  const _TeacherDialog({required this.api, required this.initialEmail});
+  final MaestroDataSource api;
+  final String initialEmail;
 
   @override
   State<_TeacherDialog> createState() => _TeacherDialogState();
@@ -171,9 +245,10 @@ class _TeacherDialog extends StatefulWidget {
 class _TeacherDialogState extends State<_TeacherDialog> {
   final _firstName = TextEditingController();
   final _lastName = TextEditingController();
-  final _email = TextEditingController();
+  late final _email = TextEditingController(text: widget.initialEmail);
   final _phone = TextEditingController();
   bool _saving = false;
+  String? _error;
 
   @override
   void dispose() {
@@ -184,57 +259,67 @@ class _TeacherDialogState extends State<_TeacherDialog> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Create Teacher Account'),
-      content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-                controller: _firstName,
-                decoration: const InputDecoration(labelText: 'First name')),
-            const SizedBox(height: 10),
-            TextField(
-                controller: _lastName,
-                decoration: const InputDecoration(labelText: 'Last name')),
-            const SizedBox(height: 10),
-            TextField(
-                controller: _email,
-                decoration: const InputDecoration(labelText: 'Email')),
-            const SizedBox(height: 10),
-            TextField(
-                controller: _phone,
-                decoration: const InputDecoration(labelText: 'Phone')),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-            onPressed: _saving ? null : () => Navigator.pop(context),
-            child: const Text('Cancel')),
-        ElevatedButton(
-            onPressed: _saving ? null : _save, child: const Text('Create')),
-      ],
-    );
+  Future<void> _save() async {
+    if (_firstName.text.trim().isEmpty && _lastName.text.trim().isEmpty) {
+      setState(() => _error = 'Enter a first or last name.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final teacher = await widget.api.createTeacher({
+        'firstName': _firstName.text.trim(),
+        'lastName': _lastName.text.trim(),
+        'email': _email.text.trim(),
+        'telephone': _phone.text.trim(),
+      });
+      if (mounted) Navigator.pop(context, teacher);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
-  Future<void> _save() async {
-    final first = _firstName.text.trim();
-    final last = _lastName.text.trim();
-    final name = '$first $last'.trim();
-    if (name.isEmpty) return;
-    setState(() => _saving = true);
-    final teacher = await widget.api.createTeacher({
-      'name': name,
-      'firstName': first,
-      'lastName': last,
-      'email': _email.text.trim(),
-      'telephone': _phone.text.trim(),
-      'address': '',
-    });
-    if (mounted) Navigator.pop(context, teacher);
-  }
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Create Teacher Profile'),
+        content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                    controller: _firstName,
+                    decoration: const InputDecoration(labelText: 'First name')),
+                const SizedBox(height: 10),
+                TextField(
+                    controller: _lastName,
+                    decoration: const InputDecoration(labelText: 'Last name')),
+                const SizedBox(height: 10),
+                TextField(
+                    controller: _email,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration:
+                        const InputDecoration(labelText: 'Contact email')),
+                const SizedBox(height: 10),
+                TextField(
+                    controller: _phone,
+                    decoration: const InputDecoration(labelText: 'Phone')),
+                if (_error != null)
+                  Text(_error!,
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.error)),
+              ],
+            )),
+        actions: [
+          TextButton(
+              onPressed: _saving ? null : () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          ElevatedButton(
+              onPressed: _saving ? null : _save, child: const Text('Create')),
+        ],
+      );
 }

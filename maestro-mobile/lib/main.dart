@@ -1,27 +1,43 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'core/config/supabase_environment.dart';
 import 'screens/maestro_app.dart';
-import 'services/api_client.dart';
-import 'services/maestro_api.dart';
+import 'services/maestro_data_source.dart';
+import 'services/supabase_maestro_data_source.dart';
+import 'services/teacher_auth.dart';
 import 'theme/maestro_theme.dart';
 
-void main() {
-  const apiBaseUrl = String.fromEnvironment(
-    'MAESTRO_API_BASE_URL',
-    defaultValue: 'http://localhost:8080/api',
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  SupabaseEnvironment.validate();
+  if (!SupabaseEnvironment.isConfigured) {
+    runApp(const MaterialApp(
+        home: Scaffold(
+            body: Center(
+      child: Text(
+          'Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY to start Maestro.'),
+    ))));
+    return;
+  }
+  await Supabase.initialize(
+    url: SupabaseEnvironment.url,
+    publishableKey: SupabaseEnvironment.publishableKey,
   );
-
+  final client = Supabase.instance.client;
   runApp(
     MaestroMobileApp(
-      api: MaestroApi(ApiClient(baseUrl: apiBaseUrl)),
+      api: SupabaseMaestroDataSource(client),
+      auth: SupabaseTeacherAuth(client),
     ),
   );
 }
 
 class MaestroMobileApp extends StatelessWidget {
-  const MaestroMobileApp({super.key, required this.api});
+  const MaestroMobileApp({super.key, required this.api, required this.auth});
 
-  final MaestroApi api;
+  final MaestroDataSource api;
+  final TeacherAuth auth;
 
   @override
   Widget build(BuildContext context) {
@@ -29,7 +45,7 @@ class MaestroMobileApp extends StatelessWidget {
       title: 'Maestro',
       debugShowCheckedModeBanner: false,
       theme: MaestroTheme.light(),
-      home: MaestroApp(api: api),
+      home: MaestroApp(api: api, auth: auth),
     );
   }
 }

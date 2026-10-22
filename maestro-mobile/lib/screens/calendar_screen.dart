@@ -5,7 +5,7 @@ import '../models/student.dart';
 import '../models/student_course.dart';
 import '../models/student_project.dart';
 import '../models/teacher.dart';
-import '../services/maestro_api.dart';
+import '../services/maestro_data_source.dart';
 import '../services/studio_metrics.dart';
 import '../theme/maestro_theme.dart';
 import '../widgets/async_state.dart';
@@ -23,7 +23,7 @@ class CalendarScreen extends StatefulWidget {
     required this.onOpenLesson,
   });
 
-  final MaestroApi api;
+  final MaestroDataSource api;
   final Teacher teacher;
   final ValueChanged<Student> onOpenStudent;
   final void Function(Student student, int courseId) onOpenLesson;

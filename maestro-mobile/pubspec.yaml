@@ -1,5 +1,5 @@
 name: maestro_mobile
-description: Flutter client for the Maestro music teaching studio backend.
+description: Flutter client for the Maestro Supabase backend.
 publish_to: "none"
 version: 0.1.0+1
 
@@ -9,8 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  http: ^1.2.2
   intl: ^0.19.0
+  supabase_flutter: ^2.0.0
 
 dev_dependencies:
   flutter_test:
