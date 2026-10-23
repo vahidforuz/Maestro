@@ -195,7 +195,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
             student: student,
             project: project,
             course: course,
-            courseNumber: index + 1,
+            courseNumber: student.courseNumberForId(course.id),
             start: _combine(date, course.hour),
             durationMinutes: widget.teacher.defaultLessonDuration,
           ));
@@ -1189,8 +1189,11 @@ class _LessonEvent {
   int get projectId => project.id;
   int get courseId => course.id;
   String get studentName => student.displayName;
-  String get courseLabel =>
-      course.title.trim().isEmpty ? 'Course $courseNumber' : course.title;
+  String get courseLabel => course.title.trim().isEmpty ||
+          RegExp(r'^(Course \d+|First course)$', caseSensitive: false)
+              .hasMatch(course.title.trim())
+      ? 'Course $courseNumber'
+      : course.title;
   String get startTime => DateFormat.Hm().format(start);
   String get timeRange {
     final end = start
@@ -1288,7 +1291,7 @@ String _weekTitle(DateTime selectedDate) {
 StatusTone _statusTone(String status) {
   return switch (status.toUpperCase()) {
     'PRESENT' => StatusTone.success,
-    'UPCOMING' || 'NOT SET' => StatusTone.warning,
+    'UPCOMING' || 'NOT SET' || 'SCHEDULED' => StatusTone.warning,
     'ABSENT' || 'CANCELLED' => StatusTone.danger,
     _ => StatusTone.neutral,
   };

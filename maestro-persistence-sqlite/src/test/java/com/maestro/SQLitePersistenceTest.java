@@ -30,6 +30,36 @@ import java.util.List;
 import junit.framework.TestCase;
 
 public class SQLitePersistenceTest extends TestCase {
+   public void testSchedulingReviewCreatesOneFutureCourseWithoutChargingStudent() throws Exception {
+      Path databasePath = tempDatabasePath();
+      RepositoryFactory repositories = repositories(databasePath);
+      Student student = new Student("Review", "Future", "", "", Instrument.PIANO,
+            Level.BEGINNER, null, DayOfWeek.THURSDAY, LocalTime.of(16, 0), 25);
+      student.setId(606);
+      StudentCourse source = student.getCurrentProject().getCourses().get(0);
+      source.setDate(LocalDate.of(2026, 10, 22));
+      CourseNote note = source.addNote("Scale");
+      note.setComment("Practice C major scale");
+
+      student.scheduleNoteReview(source, note, 2);
+      assertEquals(2, student.getCourses().size());
+      StudentCourse target = student.findCourseById(note.getTargetCourseId());
+      assertEquals(LocalDate.of(2026, 11, 5), target.getDate());
+      assertEquals(LocalTime.of(16, 0), target.getHour());
+      assertEquals(LessonStatus.SCHEDULED, target.getStatus());
+      assertEquals(0, target.getNotes().size());
+      student.scheduleNoteReview(source, note, 2);
+      assertEquals(2, student.getCourses().size());
+      assertEquals(Integer.valueOf(target.getId()), note.getTargetCourseId());
+      repositories.students().save(student);
+
+      Student reloaded = repositories(databasePath).students().findById(606).orElseThrow();
+      assertEquals(2, reloaded.getCourses().size());
+      assertEquals(0, repositories(databasePath).payments().findByStudent(reloaded).size());
+      assertEquals(1, new ReviewServiceImpl(repositories(databasePath).students())
+            .getDueReviews(reloaded, reloaded.findCourseById(target.getId())).size());
+   }
+
    public void testStudentProjectCourseNotePaymentPersistAfterReopen() throws Exception {
       Path databasePath = tempDatabasePath();
       SQLiteDatabaseProvider provider = new SQLiteDatabaseProvider(databasePath);
@@ -438,6 +468,51 @@ public class SQLitePersistenceTest extends TestCase {
       assertEquals(ReviewStatus.PENDING, reloadedCourse1.getNotes().get(2).getReviewStatus());
       assertEquals(1, new ReviewServiceImpl(repositories(databasePath).students())
             .getDueReviews(reloaded, reloadedCourse3).size());
+   }
+
+   public void testCalendarReviewsAndFutureCopiesPersistWithoutDuplicates() throws Exception {
+      Path databasePath = tempDatabasePath();
+      RepositoryFactory repositories = repositories(databasePath);
+      Student student = new Student("Calendar", "Review", "", "", Instrument.PIANO,
+            Level.BEGINNER, null, DayOfWeek.THURSDAY, LocalTime.of(16, 0), 10);
+      student.setId(505);
+      StudentProject project = student.getCurrentProject();
+      project.addPiece("Etude");
+      StudentCourse source = project.getCourses().get(0);
+      source.setDate(LocalDate.of(2026, 10, 22));
+      StudentCourse weekOne = student.addCourseToProject(project);
+      weekOne.setDate(LocalDate.of(2026, 10, 29));
+      StudentCourse weekTwo = student.addCourseToProject(project);
+      weekTwo.setDate(LocalDate.of(2026, 11, 5));
+      StudentCourse past = student.addCourseToProject(project);
+      past.setDate(LocalDate.of(2026, 10, 15));
+
+      CourseNote normal = source.addNote("Etude");
+      normal.setComment("Normal note");
+      CourseNote oneWeek = source.addNote("Etude");
+      oneWeek.setComment("Review one week");
+      student.scheduleNoteReview(source, oneWeek, 1);
+      CourseNote twoWeeks = source.addNote("Etude");
+      twoWeeks.setComment("Review two weeks");
+      student.scheduleNoteReview(source, twoWeeks, 2);
+      assertEquals(Integer.valueOf(weekOne.getId()), oneWeek.getTargetCourseId());
+      assertEquals(Integer.valueOf(weekTwo.getId()), twoWeeks.getTargetCourseId());
+
+      CourseNote existing = weekOne.addNote("Etude");
+      existing.setComment("Normal note");
+      assertEquals(5, student.applyNotesToFutureCourses(source, source.getDate()));
+      assertEquals(0, student.applyNotesToFutureCourses(source, source.getDate()));
+      assertEquals(0, past.getNotes().size());
+      repositories.students().save(student);
+
+      Student reloaded = repositories(databasePath).students().findById(505).orElseThrow();
+      assertEquals(3, reloaded.findCourseById(source.getId()).getNotes().size());
+      assertEquals(3, reloaded.findCourseById(weekOne.getId()).getNotes().size());
+      assertEquals(3, reloaded.findCourseById(weekTwo.getId()).getNotes().size());
+      assertEquals(0, reloaded.findCourseById(past.getId()).getNotes().size());
+      ReviewService reviewService = new ReviewServiceImpl(repositories(databasePath).students());
+      assertEquals(1, reviewService.getDueReviews(reloaded, reloaded.findCourseById(weekOne.getId())).size());
+      assertEquals(1, reviewService.getDueReviews(reloaded, reloaded.findCourseById(weekTwo.getId())).size());
    }
 
    private RepositoryFactory repositories(Path databasePath) {

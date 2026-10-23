@@ -379,6 +379,17 @@ class SupabaseMaestroDataSource implements MaestroDataSource {
           projectId: projectId,
           entityId: courseId,
           payload: {'noteId': noteId});
+
+  @override
+  Future<int> applyNotesToAllFutureWeeks(int studentId, int courseId) async {
+    final count =
+        await _client.rpc('maestro_apply_notes_to_future_lessons', params: {
+      'p_student_app_id': studentId,
+      'p_course_app_id': courseId,
+    });
+    return count as int;
+  }
+
   @override
   Future<Student> markReviewReviewed(int studentId, int noteId, int courseId) =>
       _command('accept_review', studentId,

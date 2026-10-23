@@ -87,9 +87,10 @@ select public.maestro_student_command('update_lesson',
     'assignment','Practice','comment','Attended','homeworkNextLesson','Etude'));
 select is((select n.review_date from public.lesson_notes n where n.app_id =
   current_setting('maestro.test.note')::bigint),
-  (select lesson_date from public.lessons where app_id =
-    current_setting('maestro.test.second_lesson')::bigint),
-  'moving target lesson updates review date');
+  (select l.lesson_date from public.lessons l where l.id =
+    (select target_lesson_id from public.lesson_notes where app_id =
+      current_setting('maestro.test.note')::bigint)),
+  'moving target lesson keeps review date aligned with the eligible target');
 select public.maestro_student_command('accept_review',
   current_setting('maestro.test.student')::bigint, null,
   current_setting('maestro.test.note')::bigint,
@@ -144,7 +145,7 @@ select public.maestro_student_command('delete_lesson',
     order by sort_order desc, app_id desc limit 1));
 select is((select count(*)::integer from public.lessons where project_id =
   (select id from public.projects where app_id = current_setting('maestro.test.project')::bigint)),
-  4, 'teacher can delete own lesson without deleting student');
+  5, 'teacher can delete own lesson without deleting student or scheduled review course');
 
 select set_config('maestro.test.review_student', public.maestro_create_student(
   '{"firstName":"Payment","familyName":"Review","courseDay":"FRIDAY",

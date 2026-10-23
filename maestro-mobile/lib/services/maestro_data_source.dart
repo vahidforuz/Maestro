@@ -36,6 +36,7 @@ abstract interface class MaestroDataSource {
       int noteId, Map<String, dynamic> request);
   Future<Student> deleteNote(
       int studentId, int projectId, int courseId, int noteId);
+  Future<int> applyNotesToAllFutureWeeks(int studentId, int courseId);
   Future<Student> markReviewReviewed(int studentId, int noteId, int courseId);
   Future<Student> keepReviewForNextCourse(
       int studentId, int noteId, int courseId);

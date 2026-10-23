@@ -48,6 +48,16 @@ class Student {
   final List<StudentCourse> courses;
   final List<StudentProject> projects;
 
+  int courseNumberForId(int courseId) {
+    final chronological = [...courses]
+      ..sort((a, b) {
+        final dates = (a.date ?? DateTime(9999))
+            .compareTo(b.date ?? DateTime(9999));
+        return dates != 0 ? dates : a.id.compareTo(b.id);
+      });
+    return chronological.indexWhere((course) => course.id == courseId) + 1;
+  }
+
   factory Student.fromJson(Map<String, dynamic> json) {
     final firstName = json['firstName'] as String? ?? '';
     final familyName = json['familyName'] as String? ?? '';

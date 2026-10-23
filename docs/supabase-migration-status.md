@@ -16,7 +16,7 @@ Versioned SQL under `supabase/migrations/` defines PostgreSQL business tables, r
 |---|---|---|---|
 | Flutter UI | Partial | Existing dashboard, students, profile, calendar, payments, and settings screens use Supabase; verify full interactive flows and all six target platforms. macOS/Linux runners are absent. | P1 |
 | Authentication | Partial | Auth sign-in/up/out, session restore, teacher onboarding and role guard work locally; decide production enrollment, confirmation, SMTP, redirects, and legacy identity linking. | P1 |
-| PostgreSQL | Partial | Ten local migrations are applied; replay on a disposable clean stack, reconcile legacy data and financial semantics, then validate on staging. | P1 |
+| PostgreSQL | Partial | Thirteen local migrations are applied; replay on a disposable clean stack, reconcile legacy data and financial semantics, then validate on staging. | P1 |
 | Student management | Partial | List/profile/create and first project/lesson use Supabase; student edit/delete and legacy data import remain. | P1 |
 | Lessons | Partial | Create/edit/delete, attendance, notes, and review scheduling use teacher-scoped RPCs; parity and interactive regression coverage remain. | P1 |
 | Calendar | Partial | Existing calendar reads Supabase lessons; verify interactive refresh and larger data sets. | P2 |
@@ -39,9 +39,9 @@ The three SQLite candidates contain different data. The read-only `scripts/inven
 ## Local verification
 
 - `flutter analyze`: PASS, no issues.
-- `flutter test --dart-define-from-file=.local.flutter.web.json`: PASS, six tests, including live read-only local Supabase access for two teacher accounts.
-- `npx --yes supabase test db --local`: PASS, 45 rollback-transaction assertions across schema, registration, grants, teacher isolation, student/project/piece/lesson/note/review writes, and payment allocation.
-- `npx --yes supabase migration list --local`: PASS, all ten migrations match local history.
+- `flutter test --dart-define-from-file=.local.flutter.web.json`: PASS, eleven tests, including course ordering, note previews, and live read-only local Supabase access for two teacher accounts.
+- `npx --yes supabase test db --local`: PASS, 58 rollback-transaction assertions across schema, registration, grants, teacher isolation, student/project/piece/lesson/note/review writes, and payment allocation.
+- `npx --yes supabase migration list --local`: PASS, the review scheduling and course creation migrations are applied locally.
 - `npx --yes supabase db lint --local`: PASS, no schema errors.
 - `python3 supabase/tests/local_access_smoke.py`: PASS, local Auth, RLS, finance, roles and private Storage access.
 - `flutter test --platform chrome --dart-define-from-file=.local.flutter.web.json`: PASS, six headless Chrome tests.

@@ -120,6 +120,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                 onDeletePiece: _deletePiece,
                 onSaveNote: _saveNote,
                 onDeleteNote: _deleteNote,
+                onApplyFutureNotes: _applyFutureNotes,
                 onMarkReviewReviewed: _markReviewReviewed,
                 onKeepReview: _keepReview,
               ),
@@ -304,8 +305,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
 
   Future<void> _deleteCourse(
       Student student, StudentProject project, StudentCourse course) async {
-    final courseNumber =
-        project.courses.indexWhere((item) => item.id == course.id) + 1;
+    final courseNumber = student.courseNumberForId(course.id);
     final confirmed = await _confirm(
       'Delete Course',
       'Delete Course $courseNumber?\n\nThis will delete the selected course and its related course data.',
@@ -340,6 +340,37 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     await _run(() async {
       await widget.api.deleteNote(student.id, project.id, course.id, note.id);
     });
+  }
+
+  Future<void> _applyFutureNotes(Student student, StudentCourse course) async {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Apply to All Future Weeks'),
+            content: const Text(
+                'Copy this course’s notes to every existing future course for this student? Past courses will stay unchanged.'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel')),
+              FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Apply')),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed) return;
+    var copied = 0;
+    var succeeded = false;
+    await _run(() async {
+      copied =
+          await widget.api.applyNotesToAllFutureWeeks(student.id, course.id);
+      succeeded = true;
+    });
+    if (mounted && succeeded) {
+      _showMessage('$copied notes copied to future courses.');
+    }
   }
 
   Future<void> _markReviewReviewed(
@@ -510,6 +541,7 @@ class _CoursesSection extends StatelessWidget {
     required this.onDeletePiece,
     required this.onSaveNote,
     required this.onDeleteNote,
+    required this.onApplyFutureNotes,
     required this.onMarkReviewReviewed,
     required this.onKeepReview,
   });
@@ -535,6 +567,7 @@ class _CoursesSection extends StatelessWidget {
       Student, StudentProject, StudentCourse, CourseNote?) onSaveNote;
   final Future<void> Function(
       Student, StudentProject, StudentCourse, CourseNote) onDeleteNote;
+  final Future<void> Function(Student, StudentCourse) onApplyFutureNotes;
   final Future<void> Function(Student, StudentCourse, CourseNote)
       onMarkReviewReviewed;
   final Future<void> Function(Student, StudentCourse, CourseNote) onKeepReview;
@@ -658,10 +691,12 @@ class _CoursesSection extends StatelessWidget {
                   else
                     for (var index = 0; index < project.courses.length; index++)
                       _CourseTile(
+                        key: ValueKey(project.courses[index].id),
                         student: student,
                         project: project,
                         course: project.courses[index],
-                        index: index,
+                        courseNumber: student
+                            .courseNumberForId(project.courses[index].id),
                         selected: project.courses[index].id == selectedCourseId,
                         priceLeft: _priceLeft(project.courses, payments),
                         dueReviews: _dueReviewsForCourse(
@@ -680,6 +715,7 @@ class _CoursesSection extends StatelessWidget {
                         onDelete: onDeleteCourse,
                         onSaveNote: onSaveNote,
                         onDeleteNote: onDeleteNote,
+                        onApplyFutureNotes: onApplyFutureNotes,
                         onMarkReviewReviewed: onMarkReviewReviewed,
                         onKeepReview: onKeepReview,
                       ),
@@ -697,19 +733,30 @@ class _CoursesSection extends StatelessWidget {
 
   List<CourseNote> _dueReviewsForCourse(Student student, StudentCourse course) {
     final due = <CourseNote>[];
-    final courseDate = course.date;
+    final seen = <int>{};
     for (final project in student.projects) {
       for (final sourceCourse in project.courses) {
         if (sourceCourse.id == course.id) continue;
         for (final note in sourceCourse.notes) {
           if (note.reviewStatus != 'PENDING') continue;
-          if (note.targetCourseId == course.id) {
+          if (note.targetCourseId == course.id && seen.add(note.id)) {
             due.add(note);
-          } else if (note.targetCourseId == null &&
-              note.reviewDate != null &&
-              courseDate != null &&
-              !note.reviewDate!.isAfter(courseDate)) {
-            due.add(note);
+          } else if (note.targetCourseId == null && note.reviewDate != null) {
+            final eligible = project.courses
+                .where((candidate) =>
+                    candidate.id != sourceCourse.id &&
+                    candidate.status != 'CANCELED' &&
+                    candidate.date != null &&
+                    sourceCourse.date != null &&
+                    candidate.date!.isAfter(sourceCourse.date!) &&
+                    !candidate.date!.isBefore(note.reviewDate!))
+                .toList()
+              ..sort((a, b) => a.date!.compareTo(b.date!));
+            if (eligible.isNotEmpty &&
+                eligible.first.id == course.id &&
+                seen.add(note.id)) {
+              due.add(note);
+            }
           }
         }
       }
@@ -731,10 +778,11 @@ class _CoursesSection extends StatelessWidget {
 
 class _CourseTile extends StatefulWidget {
   const _CourseTile({
+    super.key,
     required this.student,
     required this.project,
     required this.course,
-    required this.index,
+    required this.courseNumber,
     required this.selected,
     required this.priceLeft,
     required this.dueReviews,
@@ -745,6 +793,7 @@ class _CourseTile extends StatefulWidget {
     required this.onDelete,
     required this.onSaveNote,
     required this.onDeleteNote,
+    required this.onApplyFutureNotes,
     required this.onMarkReviewReviewed,
     required this.onKeepReview,
   });
@@ -752,7 +801,7 @@ class _CourseTile extends StatefulWidget {
   final Student student;
   final StudentProject project;
   final StudentCourse course;
-  final int index;
+  final int courseNumber;
   final bool selected;
   final double priceLeft;
   final List<CourseNote> dueReviews;
@@ -765,6 +814,7 @@ class _CourseTile extends StatefulWidget {
       Student, StudentProject, StudentCourse, CourseNote?) onSaveNote;
   final Future<void> Function(
       Student, StudentProject, StudentCourse, CourseNote) onDeleteNote;
+  final Future<void> Function(Student, StudentCourse) onApplyFutureNotes;
   final Future<void> Function(Student, StudentCourse, CourseNote)
       onMarkReviewReviewed;
   final Future<void> Function(Student, StudentCourse, CourseNote) onKeepReview;
@@ -817,7 +867,7 @@ class _CourseTileState extends State<_CourseTile> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            'Course ${widget.index + 1}',
+                            'Course ${widget.courseNumber}',
                             style: const TextStyle(fontWeight: FontWeight.w800),
                           ),
                         ],
@@ -860,6 +910,53 @@ class _CourseTileState extends State<_CourseTile> {
                 if (course.homeworkNextLesson.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text('Homework: ${course.homeworkNextLesson}'),
+                ],
+                if (course.notes.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  for (final note in course.notes.take(3))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 3),
+                      child: Text(
+                        [note.piece, note.comment]
+                            .where((part) => part.trim().isNotEmpty)
+                            .join(': '),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  if (course.notes.length > 3)
+                    Text('+${course.notes.length - 3} more notes',
+                        style: const TextStyle(color: MaestroColors.muted)),
+                ],
+                if (!_open && widget.dueReviews.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: MaestroColors.warningBg,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Review',
+                            style: TextStyle(
+                                color: MaestroColors.warningText,
+                                fontWeight: FontWeight.w800)),
+                        for (final note in widget.dueReviews.take(3))
+                          Text(
+                            [note.piece, note.comment]
+                                .where((part) => part.trim().isNotEmpty)
+                                .join(': '),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        if (widget.dueReviews.length > 3)
+                          Text('+${widget.dueReviews.length - 3} more reviews'),
+                      ],
+                    ),
+                  ),
                 ],
                 if (_open) ...[
                   const Divider(height: 24),
@@ -921,6 +1018,7 @@ class _CourseTileState extends State<_CourseTile> {
                     course: course,
                     onSaveNote: widget.onSaveNote,
                     onDeleteNote: widget.onDeleteNote,
+                    onApplyFutureNotes: widget.onApplyFutureNotes,
                   ),
                 ],
               ],
@@ -970,6 +1068,7 @@ class _Notes extends StatelessWidget {
     required this.course,
     required this.onSaveNote,
     required this.onDeleteNote,
+    required this.onApplyFutureNotes,
   });
 
   final Student student;
@@ -979,30 +1078,34 @@ class _Notes extends StatelessWidget {
       Student, StudentProject, StudentCourse, CourseNote?) onSaveNote;
   final Future<void> Function(
       Student, StudentProject, StudentCourse, CourseNote) onDeleteNote;
+  final Future<void> Function(Student, StudentCourse) onApplyFutureNotes;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
+        Text('Lesson Notes',
+            style: Theme.of(context)
+                .textTheme
+                .titleSmall
+                ?.copyWith(fontWeight: FontWeight.w800)),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
           children: [
-            Expanded(
-              child: Text(
-                'Lesson Notes',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w800),
-              ),
-            ),
             TextButton.icon(
-              onPressed: project.pieces.isEmpty
-                  ? null
-                  : () => onSaveNote(student, project, course, null),
-              icon: const Icon(Icons.add),
-              label: const Text('Add Note'),
-            ),
+                onPressed: project.pieces.isEmpty
+                    ? null
+                    : () => onSaveNote(student, project, course, null),
+                icon: const Icon(Icons.add),
+                label: const Text('Add Note')),
+            OutlinedButton.icon(
+                onPressed: course.notes.isEmpty || course.date == null
+                    ? null
+                    : () => onApplyFutureNotes(student, course),
+                icon: const Icon(Icons.copy_all_outlined),
+                label: const Text('Apply to All Future Weeks')),
           ],
         ),
         if (project.pieces.isEmpty)
@@ -1086,10 +1189,17 @@ class _ReviewSection extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const Text('Review',
+                    style: TextStyle(
+                        color: MaestroColors.warningText,
+                        fontWeight: FontWeight.w900)),
                 if (note.piece.isNotEmpty)
                   Text(note.piece,
-                      style: const TextStyle(fontWeight: FontWeight.w900)),
-                Text(note.comment.isEmpty ? 'No note text' : note.comment),
+                      style: const TextStyle(
+                          color: MaestroColors.text,
+                          fontWeight: FontWeight.w900)),
+                Text(note.comment.isEmpty ? 'No note text' : note.comment,
+                    style: const TextStyle(color: MaestroColors.text)),
                 const SizedBox(height: 6),
                 Text(
                   [
@@ -1153,14 +1263,8 @@ class _ReviewSection extends StatelessWidget {
 }
 
 int? _courseNumberForId(Student student, int courseId) {
-  for (final project in student.projects) {
-    for (var index = 0; index < project.courses.length; index++) {
-      if (project.courses[index].id == courseId) {
-        return index + 1;
-      }
-    }
-  }
-  return null;
+  final number = student.courseNumberForId(courseId);
+  return number == 0 ? null : number;
 }
 
 class _ProjectsSection extends StatelessWidget {
@@ -1450,6 +1554,7 @@ class _CourseDialogState extends State<_CourseDialog> {
   ];
   static const _statuses = [
     'NOTHING',
+    'SCHEDULED',
     'PRESENT',
     'ABSENT',
     'CANCELED',
@@ -1583,8 +1688,10 @@ class _NoteDialogState extends State<_NoteDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final pieceChoices = <String>{...widget.project.pieces,
-      if (_piece.isNotEmpty) _piece}.toList();
+    final pieceChoices = <String>{
+      ...widget.project.pieces,
+      if (_piece.isNotEmpty) _piece
+    }.toList();
     return AlertDialog(
       title: Text(widget.note == null ? 'Add Note' : 'Edit Note'),
       content: SizedBox(
@@ -1593,14 +1700,17 @@ class _NoteDialogState extends State<_NoteDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (pieceChoices.isEmpty)
-              TextFormField(initialValue: _piece,
-                onChanged: (value) => _piece = value,
-                decoration: const InputDecoration(labelText: 'Piece'))
+              TextFormField(
+                  initialValue: _piece,
+                  onChanged: (value) => _piece = value,
+                  decoration: const InputDecoration(labelText: 'Piece'))
             else
               DropdownButtonFormField<String>(
                 initialValue: _piece,
-                items: pieceChoices.map((piece) =>
-                    DropdownMenuItem(value: piece, child: Text(piece))).toList(),
+                items: pieceChoices
+                    .map((piece) =>
+                        DropdownMenuItem(value: piece, child: Text(piece)))
+                    .toList(),
                 onChanged: (value) => setState(() => _piece = value ?? _piece),
                 decoration: const InputDecoration(labelText: 'Piece'),
               ),
@@ -1615,10 +1725,10 @@ class _NoteDialogState extends State<_NoteDialog> {
               initialValue: _reviewWeeks,
               items: const [
                 DropdownMenuItem(value: 0, child: Text('No review')),
-                DropdownMenuItem(value: 1, child: Text('Next course')),
-                DropdownMenuItem(value: 2, child: Text('In 2 courses')),
-                DropdownMenuItem(value: 3, child: Text('In 3 courses')),
-                DropdownMenuItem(value: 4, child: Text('In 4 courses')),
+                DropdownMenuItem(value: 1, child: Text('Review in 1 week')),
+                DropdownMenuItem(value: 2, child: Text('Review in 2 weeks')),
+                DropdownMenuItem(value: 3, child: Text('Review in 3 weeks')),
+                DropdownMenuItem(value: 4, child: Text('Review in 4 weeks')),
               ],
               onChanged: (value) =>
                   setState(() => _reviewWeeks = value ?? _reviewWeeks),

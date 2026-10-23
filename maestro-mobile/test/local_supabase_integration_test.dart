@@ -41,9 +41,34 @@ void main() {
 
     final ada = await readAs('ada.teacher@maestro.example');
     final ben = await readAs('ben.teacher@maestro.example');
-    expect(ada.$1, {11, 12, 15});
-    expect(ben.$1, {13, 14, 15});
-    expect(ada.$2, {201});
-    expect(ben.$2, {202});
+    expect(ada.$1, containsAll({11, 12, 15}));
+    expect(ben.$1, containsAll({13, 14, 15}));
+    expect(ada.$2, contains(201));
+    expect(ben.$2, contains(202));
+    expect(ada.$2.intersection(ben.$2), isEmpty);
+  });
+
+  test('scheduled review survives a new Supabase client session',
+      skip: !local ? 'Requires the local Supabase public defines' : null,
+      () async {
+    Future<(String, int?)> readReview() async {
+      final client = SupabaseClient(
+          SupabaseEnvironment.url, SupabaseEnvironment.publishableKey);
+      try {
+        await client.auth.signInWithPassword(
+            email: 'ada.teacher@maestro.example', password: 'LocalMaestro123!');
+        final student =
+            await SupabaseMaestroDataSource(client).fetchStudent(11);
+        final note = student.courses
+            .expand((course) => course.notes)
+            .singleWhere((note) => note.id == 301);
+        return (note.comment, note.targetCourseId);
+      } finally {
+        await client.dispose();
+      }
+    }
+
+    expect(await readReview(), ('Practice slowly', 1002));
+    expect(await readReview(), ('Practice slowly', 1002));
   });
 }

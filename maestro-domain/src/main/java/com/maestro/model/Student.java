@@ -289,6 +289,78 @@ public class Student implements Serializable {
     return course;
   }
 
+  public void scheduleNoteReview(StudentCourse sourceCourse, CourseNote note, Integer weeks) {
+    if (weeks == null) {
+      note.clearReviewSchedule();
+      return;
+    }
+    LocalDate sourceDate = sourceCourse.getDate();
+    note.setSourceCourseId(sourceCourse.getId());
+    note.setReviewSchedule(weeks, sourceDate);
+    StudentProject project = getProjectForCourse(sourceCourse);
+    if (sourceDate == null || project == null) {
+      return;
+    }
+    LocalDate dueDate = sourceDate.plusWeeks(weeks);
+    StudentCourse target = getCourses().stream()
+        .filter(course -> course.getId() != sourceCourse.getId())
+        .filter(course -> course.getStatus() != LessonStatus.CANCELED)
+        .filter(course -> dueDate.equals(course.getDate()))
+        .findFirst().orElse(null);
+    if (target == null && getCourses().stream().anyMatch(course -> dueDate.equals(course.getDate()))) {
+      target = getCourses().stream()
+          .filter(course -> course.getStatus() != LessonStatus.CANCELED)
+          .filter(course -> course.getDate() != null && course.getDate().isAfter(dueDate))
+          .min((first, second) -> first.getDate().compareTo(second.getDate()))
+          .orElse(null);
+      if (target == null) {
+        note.setReviewSchedule(weeks, dueDate);
+        return;
+      }
+    }
+    if (target == null) {
+      target = new StudentCourse(
+          "Course " + (project.getCourses().size() + 1),
+          dueDate.getDayOfWeek(), dueDate,
+          sourceCourse.getHour() == null ? getFirstCourse().getHour() : sourceCourse.getHour(),
+          sourceCourse.getPrice());
+      ensureEntityIds();
+      target.setId(nextCourseId++);
+      target.setStatus(LessonStatus.SCHEDULED);
+      courses.add(target);
+      project.getCourses().add(target);
+    }
+    note.setReviewSchedule(weeks, target.getDate(), target.getId());
+  }
+
+  public int applyNotesToFutureCourses(StudentCourse sourceCourse, LocalDate today) {
+    LocalDate sourceDate = sourceCourse.getDate();
+    if (sourceDate == null) {
+      return 0;
+    }
+    int copied = 0;
+    for (StudentCourse target : getCourses()) {
+      LocalDate targetDate = target.getDate();
+      if (target.getId() == sourceCourse.getId() || targetDate == null
+          || !targetDate.isAfter(sourceDate) || !targetDate.isAfter(today)) {
+        continue;
+      }
+      for (CourseNote sourceNote : sourceCourse.getNotes()) {
+        boolean exists = target.getNotes().stream().anyMatch(note ->
+            note.getPiece().equals(sourceNote.getPiece())
+                && note.getComment().equals(sourceNote.getComment()));
+        if (exists) {
+          continue;
+        }
+        CourseNote copy = target.addNote(sourceNote.getPiece());
+        copy.setComment(sourceNote.getComment());
+        copy.setCreatedDate(sourceNote.getCreatedDate());
+        copied++;
+      }
+    }
+    return copied;
+  }
+
   public List<StudentCourse> addPaidCoursesToProject(StudentProject project, int numberOfCourses) {
     ensureFirstCourse();
     List<StudentCourse> addedCourses = new ArrayList<>();

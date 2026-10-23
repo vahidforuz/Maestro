@@ -94,6 +94,20 @@
     -fx-padding: 14;
 }
 
+.review-card {
+    -fx-background-color: #FEF3C7;
+    -fx-border-color: #D97706;
+}
+
+.review-card .label {
+    -fx-text-fill: #111827;
+}
+
+.review-card .review-label {
+    -fx-text-fill: #92400E;
+    -fx-font-weight: bold;
+}
+
 .course-card-selected {
     -fx-border-color: #2563EB;
     -fx-border-width: 2;

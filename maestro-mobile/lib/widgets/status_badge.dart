@@ -46,7 +46,7 @@ class StatusBadge extends StatelessWidget {
   StatusTone _toneFor(String value) {
     return switch (value.toUpperCase()) {
       'PRESENT' || 'PAID' || 'ACTIVE' => StatusTone.success,
-      'PENDING' || 'NOTHING' => StatusTone.warning,
+      'PENDING' || 'NOTHING' || 'SCHEDULED' => StatusTone.warning,
       'ABSENT' || 'DISMISSED' || 'LATE' => StatusTone.danger,
       _ => StatusTone.neutral,
     };

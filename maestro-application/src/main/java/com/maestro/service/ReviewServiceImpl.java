@@ -5,6 +5,7 @@ import com.maestro.model.LessonStatus;
 import com.maestro.model.ReviewStatus;
 import com.maestro.model.Student;
 import com.maestro.model.StudentCourse;
+import com.maestro.model.StudentProject;
 import com.maestro.repository.StudentRepository;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -32,7 +33,7 @@ public class ReviewServiceImpl implements ReviewService {
          }
 
          for (CourseNote note : sourceCourse.getNotes()) {
-            if (isDue(note, currentCourse, currentCourseDate)) {
+            if (isDue(student, sourceCourse, note, currentCourse, currentCourseDate)) {
                dueReviews.add(new DueReview(note, sourceCourse, sourceCourse.getDate()));
             }
          }
@@ -70,15 +71,34 @@ public class ReviewServiceImpl implements ReviewService {
       studentRepository.update(student);
    }
 
-   private boolean isDue(CourseNote note, StudentCourse currentCourse, LocalDate currentCourseDate) {
+   private boolean isDue(Student student, StudentCourse sourceCourse, CourseNote note,
+         StudentCourse currentCourse, LocalDate currentCourseDate) {
       if (note.getReviewStatus() != ReviewStatus.PENDING) {
          return false;
       }
       if (note.getTargetCourseId() != null) {
-         return note.getTargetCourseId() == currentCourse.getId();
+         if (note.getTargetCourseId() == currentCourse.getId()) {
+            return true;
+         }
+         StudentCourse target = student.findCourseById(note.getTargetCourseId());
+         if (target != null && target.getStatus() != LessonStatus.CANCELED) {
+            return false;
+         }
       }
-      return note.getReviewDate() != null
-            && !note.getReviewDate().isAfter(currentCourseDate);
+      if (note.getReviewDate() == null || note.getReviewDate().isAfter(currentCourseDate)) {
+         return false;
+      }
+      StudentProject project = student.getProjectForCourse(sourceCourse);
+      if (project == null) {
+         return false;
+      }
+      return project.getCourses().stream()
+            .filter(course -> course.getId() != sourceCourse.getId())
+            .filter(course -> course.getStatus() != LessonStatus.CANCELED)
+            .filter(course -> course.getDate() != null && !course.getDate().isBefore(note.getReviewDate()))
+            .min(Comparator.comparing(StudentCourse::getDate))
+            .map(course -> course.getId() == currentCourse.getId())
+            .orElse(false);
    }
 
    private StudentCourse findNextCourse(Student student, StudentCourse currentCourse) {
