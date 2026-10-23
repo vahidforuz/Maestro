@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:maestro_mobile/core/config/supabase_environment.dart';
+import 'package:maestro_mobile/models/time_block.dart';
 import 'package:maestro_mobile/services/supabase_maestro_data_source.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -70,5 +71,65 @@ void main() {
 
     expect(await readReview(), ('Practice slowly', 1002));
     expect(await readReview(), ('Practice slowly', 1002));
+  });
+
+  test('blocked time survives a new Supabase client session',
+      skip: !local ? 'Requires the local Supabase public defines' : null,
+      () async {
+    const title = 'Persistence test block';
+    String? id;
+    Future<SupabaseClient> signedIn() async {
+      final client = SupabaseClient(
+          SupabaseEnvironment.url, SupabaseEnvironment.publishableKey);
+      await client.auth.signInWithPassword(
+          email: 'ada.teacher@maestro.example', password: 'LocalMaestro123!');
+      return client;
+    }
+
+    try {
+      final first = await signedIn();
+      try {
+        final api = SupabaseMaestroDataSource(first);
+        await api.saveTimeBlock(TimeBlock(
+          id: '',
+          title: title,
+          category: BlockCategory.personal,
+          start: DateTime.utc(2026, 10, 28, 14),
+          end: DateTime.utc(2026, 10, 28, 16),
+          allDay: false,
+          repeat: BlockRepeat.daily,
+          notes: 'Private',
+        ));
+        id = (await api.fetchTimeBlocks(
+                DateTime.utc(2026, 10, 26), DateTime.utc(2026, 11, 1)))
+            .singleWhere((block) => block.title == title)
+            .id;
+      } finally {
+        await first.dispose();
+      }
+      final second = await signedIn();
+      try {
+        final blocks = await SupabaseMaestroDataSource(second).fetchTimeBlocks(
+            DateTime.utc(2026, 11, 2), DateTime.utc(2026, 11, 8));
+        final restored = blocks.singleWhere((block) => block.id == id);
+        expect(restored.notes, 'Private');
+        expect(restored.start.hour, 14);
+        expect(
+            restored.occurrences(
+                DateTime.utc(2026, 11, 2), DateTime.utc(2026, 11, 8)),
+            hasLength(7));
+      } finally {
+        await second.dispose();
+      }
+    } finally {
+      if (id != null) {
+        final cleanup = await signedIn();
+        try {
+          await SupabaseMaestroDataSource(cleanup).deleteTimeBlock(id);
+        } finally {
+          await cleanup.dispose();
+        }
+      }
+    }
   });
 }

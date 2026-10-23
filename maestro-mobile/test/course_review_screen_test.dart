@@ -174,38 +174,49 @@ void main() {
       ),
     ));
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Tous les cours'));
+    await tester.pumpAndSettle();
     final source = find.byKey(const ValueKey(1));
     expect(find.descendant(of: source, matching: find.text('Course 1')),
         findsOneWidget);
-    expect(find.descendant(
-        of: source,
-        matching: find.text('Etude: Practice the left hand slowly')),
+    expect(
+        find.descendant(
+            of: source,
+            matching: find.text('Etude: Practice the left hand slowly')),
         findsOneWidget);
-    expect(find.descendant(of: find.byKey(const ValueKey(3)),
-        matching: find.text('Course 3')), findsOneWidget);
-    expect(find.descendant(of: find.byKey(const ValueKey(3)),
-        matching: find.text('Review')), findsOneWidget);
+    expect(
+        find.descendant(
+            of: find.byKey(const ValueKey(3)), matching: find.text('Course 3')),
+        findsOneWidget);
+    expect(
+        find.descendant(
+            of: find.byKey(const ValueKey(3)), matching: find.text('Review')),
+        findsOneWidget);
 
-    await tester.tap(find.descendant(
-        of: source, matching: find.text('Open Lesson')));
+    await tester
+        .tap(find.descendant(of: source, matching: find.text('Open Lesson')));
     await tester.pumpAndSettle();
-    await tester.tap(find.descendant(
-        of: source, matching: find.byTooltip('Edit note')));
+    await tester.tap(
+        find.descendant(of: source, matching: find.byTooltip('Edit note')));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Comment'),
-        'Practice C major scale');
+    await tester.enterText(
+        find.widgetWithText(TextField, 'Comment'), 'Practice C major scale');
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
-    expect(find.descendant(of: source,
-        matching: find.text('Etude: Practice C major scale')), findsOneWidget);
+    expect(
+        find.descendant(
+            of: source, matching: find.text('Etude: Practice C major scale')),
+        findsOneWidget);
 
-    await tester.tap(find.descendant(
-        of: source, matching: find.byTooltip('Delete note')));
+    await tester.tap(
+        find.descendant(of: source, matching: find.byTooltip('Delete note')));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
     await tester.pumpAndSettle();
-    expect(find.descendant(of: source,
-        matching: find.text('Etude: Practice C major scale')), findsNothing);
+    expect(
+        find.descendant(
+            of: source, matching: find.text('Etude: Practice C major scale')),
+        findsNothing);
   });
 
   testWidgets('scheduled review appears once in a yellow card on its week',

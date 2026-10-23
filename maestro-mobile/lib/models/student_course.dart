@@ -7,6 +7,7 @@ class StudentCourse {
     this.day,
     this.date,
     this.hour,
+    this.durationMinutes,
     required this.price,
     required this.status,
     required this.assignment,
@@ -20,6 +21,7 @@ class StudentCourse {
   final String? day;
   final DateTime? date;
   final String? hour;
+  final int? durationMinutes;
   final double price;
   final String status;
   final String assignment;
@@ -34,6 +36,7 @@ class StudentCourse {
       day: json['day'] as String?,
       date: _parseDate(json['date']),
       hour: json['hour']?.toString(),
+      durationMinutes: json['durationMinutes'] as int?,
       price: (json['price'] as num?)?.toDouble() ?? 0,
       status: json['status'] as String? ?? 'NOTHING',
       assignment: json['assignment'] as String? ?? '',

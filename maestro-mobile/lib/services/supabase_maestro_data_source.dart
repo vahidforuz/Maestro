@@ -5,13 +5,141 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/payment.dart';
 import '../models/student.dart';
 import '../models/teacher.dart';
+import '../models/calendar_availability.dart';
+import '../models/time_block.dart';
+import 'calendar_availability_data_source.dart';
 import 'maestro_data_source.dart';
 
 /// The production data source. Authorization lives in PostgreSQL RLS/RPCs.
-class SupabaseMaestroDataSource implements MaestroDataSource {
+class SupabaseMaestroDataSource
+    implements MaestroDataSource, CalendarAvailabilityDataSource {
   SupabaseMaestroDataSource(this._client);
 
   final SupabaseClient _client;
+
+  @override
+  Future<List<TimeBlock>> fetchTimeBlocks(
+      DateTime from, DateTime through) async {
+    final teacherId = (await _myTeacherRow())['id'] as String;
+    // A block may start before the window and still cover it (vacations).
+    final rows = await _client
+        .from('teacher_time_blocks')
+        .select(
+            'id,title,category,start_at,end_at,all_day,repeat,weekdays,repeat_until,notes,teacher_time_block_exceptions(occurrence_date,cancelled,start_at,end_at,title,category,notes)')
+        .eq('teacher_id', teacherId)
+        .lte('start_at', '${_sqlDate(through)}T23:59:59')
+        .or('repeat.neq.never,end_at.gte.${_sqlDate(from)}T00:00:00');
+    return [
+      for (final row in rows)
+        TimeBlock(
+          id: row['id'] as String,
+          title: row['title'] as String,
+          category: BlockCategory.values.byName(row['category'] as String),
+          start: _wallDate(row['start_at'] as String),
+          end: _wallDate(row['end_at'] as String),
+          allDay: row['all_day'] as bool,
+          repeat: BlockRepeat.values.byName(row['repeat'] as String),
+          weekdays: [
+            for (final day in (row['weekdays'] as List<dynamic>? ?? []))
+              day as int
+          ],
+          repeatUntil: row['repeat_until'] == null
+              ? null
+              : _wallDate(row['repeat_until'] as String),
+          notes: row['notes'] as String?,
+          exceptions: [
+            for (final item
+                in (row['teacher_time_block_exceptions'] as List<dynamic>? ??
+                    []))
+              TimeBlockException(
+                date: _wallDate(item['occurrence_date'] as String),
+                cancelled: item['cancelled'] as bool,
+                start: item['start_at'] == null
+                    ? null
+                    : _wallDate(item['start_at'] as String),
+                end: item['end_at'] == null
+                    ? null
+                    : _wallDate(item['end_at'] as String),
+                title: item['title'] as String?,
+                category: item['category'] == null
+                    ? null
+                    : BlockCategory.values.byName(item['category'] as String),
+                notes: item['notes'] as String?,
+              )
+          ],
+        )
+    ];
+  }
+
+  @override
+  Future<void> saveTimeBlock(TimeBlock block) async {
+    final teacherId = (await _myTeacherRow())['id'] as String;
+    final values = <String, dynamic>{
+      'teacher_id': teacherId,
+      'title': block.title,
+      'category': block.category.name,
+      'start_at': _localTimestamp(block.start),
+      'end_at': _localTimestamp(block.end),
+      'all_day': block.allDay,
+      'repeat': block.repeat.name,
+      'weekdays': block.weekdays,
+      'repeat_until':
+          block.repeatUntil == null ? null : _sqlDate(block.repeatUntil!),
+      'notes': block.notes,
+    };
+    if (block.id.isEmpty) {
+      await _client.from('teacher_time_blocks').insert(values);
+    } else {
+      await _client
+          .from('teacher_time_blocks')
+          .update(values)
+          .eq('id', block.id)
+          .eq('teacher_id', teacherId);
+    }
+  }
+
+  @override
+  Future<void> deleteTimeBlock(String id) async {
+    final teacherId = (await _myTeacherRow())['id'] as String;
+    await _client
+        .from('teacher_time_blocks')
+        .delete()
+        .eq('id', id)
+        .eq('teacher_id', teacherId);
+  }
+
+  @override
+  Future<void> changeTimeBlockOccurrence(
+      String blockId, DateTime occurrenceDate,
+      {bool cancelled = false,
+      DateTime? start,
+      DateTime? end,
+      String? title,
+      BlockCategory? category,
+      String? notes}) async {
+    final teacherId = (await _myTeacherRow())['id'] as String;
+    await _client.from('teacher_time_block_exceptions').upsert({
+      'teacher_id': teacherId,
+      'block_id': blockId,
+      'occurrence_date': _sqlDate(occurrenceDate),
+      'cancelled': cancelled,
+      'start_at': start == null ? null : _localTimestamp(start),
+      'end_at': end == null ? null : _localTimestamp(end),
+      'title': title,
+      'category': category?.name,
+      'notes': notes,
+    }, onConflict: 'block_id,occurrence_date');
+  }
+
+  static String _localTimestamp(DateTime date) =>
+      '${_sqlDate(date)}T${date.hour.toString().padLeft(2, '0')}:'
+      '${date.minute.toString().padLeft(2, '0')}:00';
+
+  static DateTime _wallDate(String value) {
+    final parsed = DateTime.parse(value);
+    return DateTime.utc(parsed.year, parsed.month, parsed.day, parsed.hour,
+        parsed.minute, parsed.second);
+  }
 
   String get _userId {
     final id = _client.auth.currentUser?.id;
@@ -30,6 +158,206 @@ class SupabaseMaestroDataSource implements MaestroDataSource {
     }
     return Map<String, dynamic>.from(row);
   }
+
+  @override
+  Future<List<AvailabilityPeriod>> fetchAvailability(
+      DateTime weekStart, DateTime weekEnd) async {
+    final teacherId = (await _myTeacherRow())['id'] as String;
+    final from = _sqlDate(weekStart);
+    final through = _sqlDate(weekEnd);
+    final rules = await _client
+        .from('teacher_availability_rules')
+        .select(
+            'id,weekday,start_minute,end_minute,kind,effective_from,effective_until')
+        .eq('teacher_id', teacherId)
+        .lte('effective_from', through)
+        .or('effective_until.is.null,effective_until.gte.$from');
+    final exceptions = await _client
+        .from('teacher_availability_exceptions')
+        .select('id,on_date,start_minute,end_minute,kind')
+        .eq('teacher_id', teacherId)
+        .gte('on_date', from)
+        .lte('on_date', through);
+    return [
+      for (final row in rules)
+        AvailabilityPeriod(
+          id: row['id'] as String,
+          weekday: row['weekday'] as int,
+          startMinute: row['start_minute'] as int,
+          endMinute: row['end_minute'] as int,
+          available: row['kind'] == 'available',
+          effectiveFrom: DateTime.parse(row['effective_from'] as String),
+          effectiveUntil: row['effective_until'] == null
+              ? null
+              : DateTime.parse(row['effective_until'] as String),
+        ),
+      for (final row in exceptions)
+        AvailabilityPeriod(
+          id: row['id'] as String,
+          date: DateTime.parse(row['on_date'] as String),
+          startMinute: row['start_minute'] as int,
+          endMinute: row['end_minute'] as int,
+          available: row['kind'] == 'available',
+        ),
+    ];
+  }
+
+  @override
+  Future<void> saveAvailability({
+    String? id,
+    required bool recurring,
+    required DateTime date,
+    required int startMinute,
+    required int endMinute,
+    required bool available,
+    DateTime? effectiveUntil,
+  }) async {
+    if (startMinute < 0 || endMinute > 1440 || startMinute >= endMinute) {
+      throw ArgumentError('Start time must be before end time.');
+    }
+    final teacherId = (await _myTeacherRow())['id'] as String;
+    final table = recurring
+        ? 'teacher_availability_rules'
+        : 'teacher_availability_exceptions';
+    final values = <String, dynamic>{
+      'teacher_id': teacherId,
+      'start_minute': startMinute,
+      'end_minute': endMinute,
+      'kind': available ? 'available' : 'unavailable',
+      if (recurring) ...{
+        'weekday': date.weekday,
+        'effective_from': _sqlDate(date),
+        'effective_until':
+            effectiveUntil == null ? null : _sqlDate(effectiveUntil),
+      } else
+        'on_date': _sqlDate(date),
+    };
+    if (id == null) {
+      await _client.from(table).insert(values);
+    } else {
+      await _client
+          .from(table)
+          .update(values)
+          .eq('id', id)
+          .eq('teacher_id', teacherId);
+    }
+  }
+
+  @override
+  Future<void> deleteAvailability(String id, {required bool recurring}) async {
+    final teacherId = (await _myTeacherRow())['id'] as String;
+    final table = recurring
+        ? 'teacher_availability_rules'
+        : 'teacher_availability_exceptions';
+    await _client.from(table).delete().eq('id', id).eq('teacher_id', teacherId);
+  }
+
+  @override
+  Future<void> changeRecurringAvailability({
+    required String id,
+    required DateTime fromDate,
+    required int startMinute,
+    required int endMinute,
+    required bool available,
+    required bool delete,
+  }) async {
+    await _client.rpc('maestro_change_availability_rule', params: {
+      'p_rule_id': id,
+      'p_from_date': _sqlDate(fromDate),
+      'p_start_minute': startMinute,
+      'p_end_minute': endMinute,
+      'p_kind': available ? 'available' : 'unavailable',
+      'p_delete': delete,
+    });
+  }
+
+  @override
+  Future<void> copyAvailabilityDay(
+      DateTime sourceDate, List<int> targetWeekdays) async {
+    await _client.rpc('maestro_copy_availability_day', params: {
+      'p_source_date': _sqlDate(sourceDate),
+      'p_target_weekdays': targetWeekdays,
+    });
+  }
+
+  @override
+  Future<List<AvailabilityShareLink>> fetchAvailabilityShareLinks() async {
+    final teacherId = (await _myTeacherRow())['id'] as String;
+    final rows = await _client
+        .from('availability_share_links')
+        .select('id,created_at,expires_at,range_from,range_until,revoked_at')
+        .eq('teacher_id', teacherId)
+        .order('created_at', ascending: false);
+    return [
+      for (final row in rows)
+        AvailabilityShareLink(
+          id: row['id'] as String,
+          createdAt: DateTime.parse(row['created_at'] as String),
+          expiresAt: row['expires_at'] == null
+              ? null
+              : DateTime.parse(row['expires_at'] as String),
+          rangeFrom: row['range_from'] == null
+              ? null
+              : DateTime.parse(row['range_from'] as String),
+          rangeUntil: row['range_until'] == null
+              ? null
+              : DateTime.parse(row['range_until'] as String),
+          revokedAt: row['revoked_at'] == null
+              ? null
+              : DateTime.parse(row['revoked_at'] as String),
+        )
+    ];
+  }
+
+  @override
+  Future<CreatedAvailabilityShareLink> createAvailabilityShareLink(
+      {DateTime? expiresAt, DateTime? rangeFrom, DateTime? rangeUntil}) async {
+    final row = Map<String, dynamic>.from(
+        await _client.rpc('maestro_create_availability_link', params: {
+      'p_expires_at': expiresAt?.toUtc().toIso8601String(),
+      'p_range_from': rangeFrom == null ? null : _sqlDate(rangeFrom),
+      'p_range_until': rangeUntil == null ? null : _sqlDate(rangeUntil),
+    }) as Map);
+    return CreatedAvailabilityShareLink(
+        row['id'] as String, row['token'] as String);
+  }
+
+  @override
+  Future<void> revokeAvailabilityShareLink(String id) async {
+    final teacherId = (await _myTeacherRow())['id'] as String;
+    await _client
+        .from('availability_share_links')
+        .update({'revoked_at': DateTime.now().toUtc().toIso8601String()})
+        .eq('id', id)
+        .eq('teacher_id', teacherId);
+  }
+
+  @override
+  Future<List<CalendarUtcRange>> convertCalendarRanges(
+      List<CalendarLocalRange> ranges) async {
+    final rows = await _client.rpc('maestro_convert_calendar_ranges', params: {
+      'p_ranges': [
+        for (final range in ranges)
+          {
+            'date': _sqlDate(range.date),
+            'startMinute': range.startMinute,
+            'endMinute': range.endMinute,
+          }
+      ],
+    }) as List<dynamic>;
+    return [
+      for (final row in rows)
+        CalendarUtcRange(
+          DateTime.parse(row['startAt'] as String).toUtc(),
+          DateTime.parse(row['endAt'] as String).toUtc(),
+        )
+    ];
+  }
+
+  static String _sqlDate(DateTime date) =>
+      '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
 
   @override
   Future<List<Teacher>> fetchTeachers() async {
@@ -73,6 +401,7 @@ class SupabaseMaestroDataSource implements MaestroDataSource {
       'main_instrument': request['mainInstrument'],
       'other_instruments': request['otherInstruments'],
       'default_lesson_duration': request['defaultLessonDuration'],
+      'timezone': request['timezone'],
       'default_lesson_price': request['defaultLessonPrice'],
       'currency': request['currency'],
       'profile_image_path': request['profileImagePath'],
@@ -128,7 +457,7 @@ class SupabaseMaestroDataSource implements MaestroDataSource {
     final lessonRows = await _client
         .from('lessons')
         .select(
-          'id,app_id,project_id,title,day,lesson_date,hour,price,status,'
+          'id,app_id,project_id,title,day,lesson_date,hour,duration_minutes,price,status,'
           'assignment,comment,homework_next_lesson,sort_order',
         )
         .eq('student_id', studentUuid)
@@ -189,6 +518,7 @@ class SupabaseMaestroDataSource implements MaestroDataSource {
           'day': lesson['day'],
           'date': lesson['lesson_date'],
           'hour': _time(lesson['hour']),
+          'durationMinutes': lesson['duration_minutes'],
           'price': _number(lesson['price']),
           'status': lesson['status'],
           'assignment': lesson['assignment'],
@@ -353,9 +683,16 @@ class SupabaseMaestroDataSource implements MaestroDataSource {
       _command('add_lesson', studentId, projectId: projectId);
   @override
   Future<Student> updateCourse(int studentId, int projectId, int courseId,
-          Map<String, dynamic> request) =>
-      _command('update_lesson', studentId,
-          projectId: projectId, entityId: courseId, payload: request);
+      Map<String, dynamic> request) async {
+    await _client.rpc('maestro_update_lesson_with_duration', params: {
+      'p_student_app_id': studentId,
+      'p_project_app_id': projectId,
+      'p_lesson_app_id': courseId,
+      'p_payload': request,
+    });
+    return fetchStudent(studentId);
+  }
+
   @override
   Future<Student> deleteCourse(int studentId, int projectId, int courseId) =>
       _command('delete_lesson', studentId,
@@ -415,6 +752,7 @@ class SupabaseMaestroDataSource implements MaestroDataSource {
         'mainInstrument': row['main_instrument'],
         'otherInstruments': row['other_instruments'],
         'defaultLessonDuration': row['default_lesson_duration'],
+        'timezone': row['timezone'],
         'defaultLessonPrice': _number(row['default_lesson_price']),
         'currency': row['currency'],
         'profileImagePath': row['profile_image_path'],

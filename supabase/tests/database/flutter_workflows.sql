@@ -149,7 +149,7 @@ select is((select count(*)::integer from public.lessons where project_id =
 
 select set_config('maestro.test.review_student', public.maestro_create_student(
   '{"firstName":"Payment","familyName":"Review","courseDay":"FRIDAY",
-    "courseHour":"15:00","coursePrice":20}'::jsonb)::text, true);
+    "courseHour":"19:00","coursePrice":20}'::jsonb)::text, true);
 select set_config('maestro.test.review_project', (select app_id::text from public.projects
   where student_id = (select id from public.students where app_id =
     current_setting('maestro.test.review_student')::bigint)), true);

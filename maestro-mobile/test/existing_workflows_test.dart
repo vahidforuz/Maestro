@@ -53,7 +53,7 @@ const student = {
       'id': 1,
       'name': 'Project 1',
       'paidCourseCount': 0,
-      'pieces': ['Etude'],
+      'pieces': ['Etude', 'Voice basics'],
       'courses': [course],
     },
   ],
@@ -94,28 +94,65 @@ void main() {
     expect(find.text('Dashboard'), findsWidgets);
   });
 
-  testWidgets('teacher can reach student profile and existing sections',
-      (tester) async {
-    final api = _FakeDataSource();
+  for (final viewport in [const Size(420, 900), const Size(1280, 900)]) {
+    testWidgets('teacher can navigate student tabs at ${viewport.width}px',
+        (tester) async {
+      final api = _FakeDataSource();
 
-    await tester.binding.setSurfaceSize(const Size(420, 900));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester
-        .pumpWidget(MaterialApp(home: MaestroApp(api: api, auth: _FakeAuth())));
-    await tester.pumpAndSettle();
-    expect(find.text('Dashboard'), findsWidgets);
+      await tester.binding.setSurfaceSize(viewport);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+          MaterialApp(home: MaestroApp(api: api, auth: _FakeAuth())));
+      await tester.pumpAndSettle();
+      expect(find.text('Dashboard'), findsWidgets);
 
-    await tester.tap(find.text('Students').last);
-    await tester.pumpAndSettle();
-    expect(find.text('Sam Student'), findsOneWidget);
+      await tester.tap(find.text('Students').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Sam Student'), findsOneWidget);
 
-    await tester.tap(find.text('Sam Student'));
-    await tester.pumpAndSettle();
-    expect(find.text('Projects / Pieces'), findsOneWidget);
-    expect(find.text('Payments'), findsWidgets);
-    expect(api.fetchedStudent, isTrue);
-    expect(api.fetchedStudentPayments, isTrue);
-  });
+      await tester.tap(find.text('Sam Student'));
+      await tester.pumpAndSettle();
+      final coursesTab = find.widgetWithText(ChoiceChip, 'Courses');
+      final piecesTab = find.widgetWithText(ChoiceChip, 'Pieces');
+      final paymentTab = find.widgetWithText(ChoiceChip, 'Payment');
+      expect(coursesTab, findsOneWidget);
+      expect(piecesTab, findsOneWidget);
+      expect(paymentTab, findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, 'Voice Basics'), findsNothing);
+      bool appearsBefore(Offset first, Offset second) =>
+          first.dy < second.dy ||
+          (first.dy == second.dy && first.dx < second.dx);
+      expect(
+          appearsBefore(
+              tester.getTopLeft(coursesTab), tester.getTopLeft(piecesTab)),
+          isTrue);
+      expect(
+          appearsBefore(
+              tester.getTopLeft(piecesTab), tester.getTopLeft(paymentTab)),
+          isTrue);
+      expect(tester.widget<ChoiceChip>(coursesTab).selected, isTrue);
+
+      await tester.tap(piecesTab);
+      await tester.pumpAndSettle();
+      expect(tester.widget<ChoiceChip>(piecesTab).selected, isTrue);
+      expect(find.text('Etude'), findsOneWidget);
+      expect(find.text('Voice basics'), findsOneWidget);
+      expect(find.text('Add Project'), findsOneWidget);
+
+      await tester.tap(paymentTab);
+      await tester.pumpAndSettle();
+      expect(tester.widget<ChoiceChip>(paymentTab).selected, isTrue);
+      expect(find.text('Add Payment'), findsOneWidget);
+      expect(find.text('No payments yet'), findsOneWidget);
+
+      await tester.tap(coursesTab);
+      await tester.pumpAndSettle();
+      expect(tester.widget<ChoiceChip>(coursesTab).selected, isTrue);
+      expect(find.text('Course 1'), findsOneWidget);
+      expect(api.fetchedStudent, isTrue);
+      expect(api.fetchedStudentPayments, isTrue);
+    });
+  }
 
   test('display balance charges present and absent, not cancelled lessons', () {
     final parsed = Student.fromJson({

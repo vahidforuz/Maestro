@@ -1,18 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../models/calendar_availability.dart';
+import '../models/time_block.dart';
 import '../models/student.dart';
 import '../models/student_course.dart';
 import '../models/student_project.dart';
 import '../models/teacher.dart';
 import '../services/maestro_data_source.dart';
+import '../services/calendar_availability_data_source.dart';
 import '../services/studio_metrics.dart';
 import '../theme/maestro_theme.dart';
 import '../widgets/async_state.dart';
 import '../widgets/maestro_card.dart';
 import '../widgets/status_badge.dart';
+import 'share_availability_dialog.dart';
+import 'export_calendar_dialog.dart';
+import 'time_block_dialog.dart';
 
 enum _CalendarView { day, week, month }
+
+enum _CalendarContent { lessons, availability }
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({
@@ -21,12 +29,14 @@ class CalendarScreen extends StatefulWidget {
     required this.teacher,
     required this.onOpenStudent,
     required this.onOpenLesson,
+    this.onTeacherChanged,
   });
 
   final MaestroDataSource api;
   final Teacher teacher;
   final ValueChanged<Student> onOpenStudent;
   final void Function(Student student, int courseId) onOpenLesson;
+  final ValueChanged<Teacher>? onTeacherChanged;
 
   @override
   State<CalendarScreen> createState() => _CalendarScreenState();
@@ -36,12 +46,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
   late Future<List<Student>> _future;
   DateTime _selectedDate = _dateOnly(DateTime.now());
   _CalendarView _view = _CalendarView.week;
+  _CalendarContent _contentView = _CalendarContent.lessons;
+  Future<List<AvailabilityPeriod>>? _availabilityFuture;
+  Future<List<TimeBlock>>? _blocksFuture;
   String _query = '';
 
   @override
   void initState() {
     super.initState();
     _future = widget.api.fetchStudents();
+    _loadAvailability();
   }
 
   @override
@@ -64,6 +78,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Widget _content(List<Student> students) {
+    if (_contentView != _CalendarContent.lessons) {
+      return _availabilityContent(students);
+    }
     final visible = visibleStudentsForTeacher(students, widget.teacher);
     final events = _filteredEvents(_eventsForStudents(visible));
     final visibleEvents = events.where(_isInVisiblePeriod).toList();
@@ -83,6 +100,21 @@ class _CalendarScreenState extends State<CalendarScreen> {
                   .headlineSmall
                   ?.copyWith(fontWeight: FontWeight.w900),
             ),
+            const SizedBox(height: 12),
+            _contentPicker(),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+                onPressed: _shareAvailability,
+                icon: const Icon(Icons.share_outlined),
+                label: const Text('Share Availability')),
+            TextButton.icon(
+                onPressed: () => _exportCalendar(students),
+                icon: const Icon(Icons.ios_share),
+                label: const Text('Export Calendar')),
+            TextButton.icon(
+                onPressed: _calendarSettings,
+                icon: const Icon(Icons.settings_outlined),
+                label: const Text('Calendar Settings')),
             const SizedBox(height: 12),
             _Toolbar(
               selectedDate: _selectedDate,
@@ -142,7 +174,280 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   void _refresh() {
-    setState(() => _future = widget.api.fetchStudents());
+    setState(() {
+      _future = widget.api.fetchStudents();
+      _loadAvailability();
+    });
+  }
+
+  void _loadAvailability() {
+    if (widget.api is CalendarAvailabilityDataSource) {
+      final source = widget.api as CalendarAvailabilityDataSource;
+      final start = _startOfWeek(_selectedDate);
+      _availabilityFuture =
+          source.fetchAvailability(start, _addCalendarDays(start, 6));
+      _blocksFuture = source.fetchTimeBlocks(start, _addCalendarDays(start, 6));
+    }
+  }
+
+  void _shareAvailability() {
+    if (widget.api is! CalendarAvailabilityDataSource) return;
+    showDialog<void>(
+        context: context,
+        builder: (context) => ShareAvailabilityDialog(
+            source: widget.api as CalendarAvailabilityDataSource));
+  }
+
+  void _exportCalendar(List<Student> students) {
+    if (widget.api is! CalendarAvailabilityDataSource) return;
+    final events =
+        _eventsForStudents(visibleStudentsForTeacher(students, widget.teacher));
+    showDialog<void>(
+        context: context,
+        builder: (context) => ExportCalendarDialog(
+              source: widget.api as CalendarAvailabilityDataSource,
+              teacherId: widget.teacher.id,
+              timezone: widget.teacher.timezone,
+              lessons: [
+                for (final event in events)
+                  if (event.course.hour != null &&
+                      event.course.status != 'CANCELED')
+                    CalendarExportLesson(
+                        id: event.courseId,
+                        date: event.start,
+                        startMinute: event.start.hour * 60 + event.start.minute,
+                        durationMinutes: event.durationMinutes,
+                        teacherLabel: event.studentName),
+              ],
+            ));
+  }
+
+  Future<void> _calendarSettings() async {
+    final controller = TextEditingController(text: widget.teacher.timezone);
+    final timezone = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+              title: const Text('Calendar Settings'),
+              content: SizedBox(
+                  width: 380,
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const Text(
+                        'Enter the IANA timezone used for lessons and availability.'),
+                    const SizedBox(height: 12),
+                    TextField(
+                        controller: controller,
+                        decoration: const InputDecoration(
+                            labelText: 'Timezone',
+                            hintText: 'America/Toronto')),
+                  ])),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel')),
+                FilledButton(
+                    onPressed: () =>
+                        Navigator.pop(context, controller.text.trim()),
+                    child: const Text('Save')),
+              ],
+            ));
+    controller.dispose();
+    if (timezone == null || timezone.isEmpty || !mounted) return;
+    try {
+      final teacher = await widget.api
+          .updateTeacher(widget.teacher.id, {'timezone': timezone});
+      widget.onTeacherChanged?.call(teacher);
+      if (mounted) setState(() {});
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not update timezone: $error')));
+      }
+    }
+  }
+
+  Widget _contentPicker() => SegmentedButton<_CalendarContent>(
+        selected: {_contentView},
+        showSelectedIcon: false,
+        onSelectionChanged: (selection) =>
+            setState(() => _contentView = selection.first),
+        segments: const [
+          ButtonSegment(
+              value: _CalendarContent.lessons, label: Text('Lessons')),
+          ButtonSegment(
+              value: _CalendarContent.availability,
+              label: Text('Availability')),
+        ],
+      );
+
+  Widget _availabilityContent(List<Student> students) {
+    final events =
+        _eventsForStudents(visibleStudentsForTeacher(students, widget.teacher));
+    final busy = <BusyPeriod>[
+      for (final event in events)
+        if (event.course.status != 'CANCELED' && event.course.hour != null)
+          BusyPeriod(
+            date: event.start,
+            startMinute: event.start.hour * 60 + event.start.minute,
+            endMinute: event.start.hour * 60 +
+                event.start.minute +
+                event.durationMinutes,
+          ),
+    ];
+    return LayoutBuilder(builder: (context, constraints) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Calendar',
+            style: Theme.of(context)
+                .textTheme
+                .headlineSmall
+                ?.copyWith(fontWeight: FontWeight.w900)),
+        const SizedBox(height: 12),
+        _contentPicker(),
+        const SizedBox(height: 12),
+        Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              IconButton.filledTonal(
+                  onPressed: _previous,
+                  tooltip: 'Previous week',
+                  icon: const Icon(Icons.chevron_left)),
+              OutlinedButton(onPressed: _today, child: const Text('Today')),
+              IconButton.filledTonal(
+                  onPressed: _next,
+                  tooltip: 'Next week',
+                  icon: const Icon(Icons.chevron_right)),
+              Text(_weekTitle(_selectedDate),
+                  style: const TextStyle(fontWeight: FontWeight.w900)),
+              Text(widget.teacher.timezone,
+                  style: const TextStyle(color: MaestroColors.muted)),
+            ]),
+        const SizedBox(height: 10),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          FilledButton.icon(
+              onPressed: () => _openPeriodDialog(
+                  _selectedDate, 9 * 60, 17 * 60, true, null, students),
+              icon: const Icon(Icons.add),
+              label: const Text('Add Availability')),
+          OutlinedButton.icon(
+              onPressed: () => _openTimeBlockDialog(
+                  _selectedDate, 9 * 60, 10 * 60, students),
+              icon: const Icon(Icons.block),
+              label: const Text('+ Block Time')),
+          for (final preset in ['Sleep', 'Vacation', 'Day Off'])
+            ActionChip(
+                label: Text(preset),
+                onPressed: () => _openTimeBlockDialog(
+                    _selectedDate, 9 * 60, 10 * 60, students,
+                    preset: preset)),
+          OutlinedButton.icon(
+              onPressed: _shareAvailability,
+              icon: const Icon(Icons.share_outlined),
+              label: const Text('Share Availability')),
+          OutlinedButton.icon(
+              onPressed: () => _exportCalendar(students),
+              icon: const Icon(Icons.ios_share),
+              label: const Text('Export Calendar')),
+          OutlinedButton.icon(
+              onPressed: _calendarSettings,
+              icon: const Icon(Icons.settings_outlined),
+              label: const Text('Calendar Settings')),
+        ]),
+        const SizedBox(height: 12),
+        Expanded(
+            child: _availabilityFuture == null
+                ? const Center(
+                    child: Text(
+                        'Availability requires a Supabase teacher account.'))
+                : FutureBuilder<List<AvailabilityPeriod>>(
+                    future: _availabilityFuture,
+                    builder: (context, snapshot) {
+                      if (snapshot.hasError) {
+                        return Center(
+                            child: Text(
+                                'Could not load availability: ${snapshot.error}'));
+                      }
+                      if (!snapshot.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      final periods = snapshot.data!;
+                      final start = _startOfWeek(_selectedDate);
+                      return FutureBuilder<List<TimeBlock>>(
+                        future: _blocksFuture,
+                        builder: (context, blocksSnapshot) {
+                          if (blocksSnapshot.hasError) {
+                            return Center(
+                                child: Text(
+                                    'Could not load blocked time: ${blocksSnapshot.error}'));
+                          }
+                          if (!blocksSnapshot.hasData) {
+                            return const Center(
+                                child: CircularProgressIndicator());
+                          }
+                          final blocks = blocksSnapshot.data!;
+                          return SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: SizedBox(
+                                width: 1050,
+                                child: SingleChildScrollView(
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      for (var index = 0; index < 7; index++)
+                                        SizedBox(
+                                            width: 150,
+                                            child: _AvailabilityDay(
+                                              day: _addCalendarDays(
+                                                  start, index),
+                                              periods: periods,
+                                              busy: busy,
+                                              blocks: blocks,
+                                              events: events
+                                                  .where((event) =>
+                                                      event.course.status !=
+                                                          'CANCELED' &&
+                                                      event.course.hour != null)
+                                                  .toList(),
+                                              onSelect: (day, from, to) =>
+                                                  _chooseRangeAction(day, from,
+                                                      to, periods, students),
+                                              onBlockEdit: (occurrence) =>
+                                                  _openTimeBlockDialog(
+                                                      _addCalendarDays(
+                                                          start, index),
+                                                      occurrence.start.hour *
+                                                              60 +
+                                                          occurrence
+                                                              .start.minute,
+                                                      occurrence.end.hour * 60 +
+                                                          occurrence.end.minute,
+                                                      students,
+                                                      occurrence: occurrence),
+                                              onEdit: (period) =>
+                                                  _openPeriodDialog(
+                                                      _addCalendarDays(
+                                                          start, index),
+                                                      period.startMinute,
+                                                      period.endMinute,
+                                                      period.available,
+                                                      periods,
+                                                      students,
+                                                      existing: period),
+                                              onCopy: () => _copyDay(
+                                                  _addCalendarDays(
+                                                      start, index)),
+                                            )),
+                                    ],
+                                  ),
+                                )),
+                          );
+                        },
+                      );
+                    },
+                  )),
+      ]);
+    });
   }
 
   void _selectCalendarDate(DateTime date) {
@@ -156,9 +461,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   void _previous() {
     setState(() {
+      if (_contentView != _CalendarContent.lessons) {
+        _selectedDate = _addCalendarDays(_selectedDate, -7);
+        _loadAvailability();
+        return;
+      }
       _selectedDate = switch (_view) {
-        _CalendarView.day => _selectedDate.subtract(const Duration(days: 1)),
-        _CalendarView.week => _selectedDate.subtract(const Duration(days: 7)),
+        _CalendarView.day => _addCalendarDays(_selectedDate, -1),
+        _CalendarView.week => _addCalendarDays(_selectedDate, -7),
         _CalendarView.month =>
           DateTime(_selectedDate.year, _selectedDate.month - 1, 1),
       };
@@ -169,14 +479,20 @@ class _CalendarScreenState extends State<CalendarScreen> {
     setState(() {
       _selectedDate = _dateOnly(DateTime.now());
       _future = widget.api.fetchStudents();
+      _loadAvailability();
     });
   }
 
   void _next() {
     setState(() {
+      if (_contentView != _CalendarContent.lessons) {
+        _selectedDate = _addCalendarDays(_selectedDate, 7);
+        _loadAvailability();
+        return;
+      }
       _selectedDate = switch (_view) {
-        _CalendarView.day => _selectedDate.add(const Duration(days: 1)),
-        _CalendarView.week => _selectedDate.add(const Duration(days: 7)),
+        _CalendarView.day => _addCalendarDays(_selectedDate, 1),
+        _CalendarView.week => _addCalendarDays(_selectedDate, 7),
         _CalendarView.month =>
           DateTime(_selectedDate.year, _selectedDate.month + 1, 1),
       };
@@ -197,7 +513,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
             course: course,
             courseNumber: student.courseNumberForId(course.id),
             start: _combine(date, course.hour),
-            durationMinutes: widget.teacher.defaultLessonDuration,
+            durationMinutes:
+                course.durationMinutes ?? widget.teacher.defaultLessonDuration,
           ));
         }
       }
@@ -223,11 +540,410 @@ class _CalendarScreenState extends State<CalendarScreen> {
       _CalendarView.month => DateTime(_selectedDate.year, _selectedDate.month),
     };
     final end = switch (_view) {
-      _CalendarView.day => start.add(const Duration(days: 1)),
-      _CalendarView.week => start.add(const Duration(days: 7)),
+      _CalendarView.day => _addCalendarDays(start, 1),
+      _CalendarView.week => _addCalendarDays(start, 7),
       _CalendarView.month => DateTime(start.year, start.month + 1),
     };
     return !event.start.isBefore(start) && event.start.isBefore(end);
+  }
+
+  Future<void> _openPeriodDialog(
+      DateTime day,
+      int initialStart,
+      int initialEnd,
+      bool initiallyAvailable,
+      List<AvailabilityPeriod>? current,
+      List<Student> students,
+      {AvailabilityPeriod? existing}) async {
+    if (widget.api is! CalendarAvailabilityDataSource) return;
+    final source = widget.api as CalendarAvailabilityDataSource;
+    final weekStart = _startOfWeek(day);
+    final periods = current ??
+        await source.fetchAvailability(
+            weekStart, _addCalendarDays(weekStart, 6));
+    if (!mounted) return;
+    final startController =
+        TextEditingController(text: clockLabel(initialStart));
+    final endController = TextEditingController(
+        text: initialEnd == 1440 ? '24:00' : clockLabel(initialEnd));
+    var recurring = existing?.weekday != null || existing == null;
+    var available = initiallyAvailable;
+    var fullDay = initialStart == 0 && initialEnd == 1440;
+    String? error;
+    final result = await showDialog<_PeriodDraft>(
+      context: context,
+      builder: (context) => StatefulBuilder(builder: (context, update) {
+        return AlertDialog(
+          title: Text(existing == null
+              ? 'Add calendar period'
+              : 'Edit calendar period'),
+          content: SizedBox(
+              width: 400,
+              child: SingleChildScrollView(
+                  child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(DateFormat.yMMMMEEEEd().format(day)),
+                  const SizedBox(height: 12),
+                  SegmentedButton<bool>(
+                      selected: {available},
+                      onSelectionChanged: (value) =>
+                          update(() => available = value.first),
+                      segments: const [
+                        ButtonSegment(value: true, label: Text('Available')),
+                        ButtonSegment(value: false, label: Text('Unavailable')),
+                      ]),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<bool>(
+                    initialValue: recurring,
+                    decoration: const InputDecoration(labelText: 'Apply to'),
+                    items: const [
+                      DropdownMenuItem(
+                          value: false, child: Text('This date only')),
+                      DropdownMenuItem(
+                          value: true,
+                          child: Text('This weekday, from this date')),
+                    ],
+                    onChanged: existing == null
+                        ? (value) => update(() => recurring = value!)
+                        : null,
+                  ),
+                  if (existing?.weekday != null)
+                    Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                            'This weekly rule will change from '
+                            '${DateFormat.yMMMd().format(day)} onward. Earlier weeks stay as they are.',
+                            style:
+                                const TextStyle(color: MaestroColors.muted))),
+                  CheckboxListTile(
+                      value: fullDay,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Entire day'),
+                      onChanged: (value) =>
+                          update(() => fullDay = value ?? false)),
+                  if (!fullDay)
+                    Row(children: [
+                      Expanded(
+                          child: TextField(
+                              controller: startController,
+                              decoration: const InputDecoration(
+                                  labelText: 'Start HH:MM'))),
+                      const SizedBox(width: 12),
+                      Expanded(
+                          child: TextField(
+                              controller: endController,
+                              decoration: const InputDecoration(
+                                  labelText: 'End HH:MM'))),
+                    ]),
+                  if (error != null)
+                    Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Text(error!,
+                            style: const TextStyle(color: Colors.red))),
+                ],
+              ))),
+          actions: [
+            if (existing != null)
+              TextButton(
+                  onPressed: () =>
+                      Navigator.pop(context, const _PeriodDraft.delete()),
+                  child: const Text('Delete')),
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () {
+                  final start = fullDay ? 0 : parseClock(startController.text);
+                  final end = fullDay
+                      ? 1440
+                      : endController.text.trim() == '24:00'
+                          ? 1440
+                          : parseClock(endController.text);
+                  if (start == null || end == null || start >= end) {
+                    update(() => error =
+                        'Enter a valid range with the start before the end.');
+                    return;
+                  }
+                  if (periods.any((period) =>
+                      period.id != existing?.id &&
+                      period.available == available &&
+                      (recurring
+                          ? period.weekday == day.weekday && period.date == null
+                          : period.date != null &&
+                              _isSameDay(period.date!, day)) &&
+                      period.startMinute < end &&
+                      period.endMinute > start &&
+                      period.appliesTo(day))) {
+                    update(() => error =
+                        'This overlaps another period of the same type.');
+                    return;
+                  }
+                  Navigator.pop(
+                      context, _PeriodDraft(recurring, available, start, end));
+                },
+                child: const Text('Save')),
+          ],
+        );
+      }),
+    );
+    startController.dispose();
+    endController.dispose();
+    if (result == null || !mounted) return;
+    try {
+      if (result.delete) {
+        if (existing!.weekday != null) {
+          await source.changeRecurringAvailability(
+              id: existing.id,
+              fromDate: day,
+              startMinute: existing.startMinute,
+              endMinute: existing.endMinute,
+              available: existing.available,
+              delete: true);
+        } else {
+          await source.deleteAvailability(existing.id, recurring: false);
+        }
+      } else {
+        if (!result.available) {
+          final conflicts = _eventsForStudents(
+                  visibleStudentsForTeacher(students, widget.teacher))
+              .where((event) {
+            if (event.course.status == 'CANCELED' ||
+                event.course.hour == null) {
+              return false;
+            }
+            final matches = result.recurring
+                ? event.start.weekday == day.weekday &&
+                    dayNumber(event.start) >= dayNumber(day)
+                : _isSameDay(event.start, day);
+            final start = event.start.hour * 60 + event.start.minute;
+            return matches &&
+                start < result.end &&
+                start + event.durationMinutes > result.start;
+          }).length;
+          if (conflicts > 0) {
+            final proceed = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                      title: const Text('Existing lessons overlap'),
+                      content: Text(
+                          '$conflicts scheduled lesson(s) overlap this unavailable period. They will remain scheduled and show as occupied.'),
+                      actions: [
+                        TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('Cancel')),
+                        FilledButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            child: const Text('Save anyway')),
+                      ],
+                    ));
+            if (proceed != true) return;
+          }
+        }
+        if (existing?.weekday != null) {
+          await source.changeRecurringAvailability(
+              id: existing!.id,
+              fromDate: day,
+              startMinute: result.start,
+              endMinute: result.end,
+              available: result.available,
+              delete: false);
+        } else {
+          await source.saveAvailability(
+            id: existing?.id,
+            recurring: result.recurring,
+            date: existing?.date ?? day,
+            startMinute: result.start,
+            endMinute: result.end,
+            available: result.available,
+          );
+        }
+      }
+      if (mounted) setState(_loadAvailability);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not save availability: $error')));
+      }
+    }
+  }
+
+  Future<void> _chooseRangeAction(DateTime day, int start, int end,
+      List<AvailabilityPeriod> periods, List<Student> students) async {
+    final action = await showModalBottomSheet<bool>(
+        context: context,
+        builder: (context) => SafeArea(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+              ListTile(
+                  leading: const Icon(Icons.block),
+                  title: const Text('Block Time'),
+                  onTap: () => Navigator.pop(context, true)),
+              ListTile(
+                  leading: const Icon(Icons.add),
+                  title: const Text('Add Availability'),
+                  onTap: () => Navigator.pop(context, false)),
+            ])));
+    if (!mounted || action == null) return;
+    if (action) {
+      await _openTimeBlockDialog(day, start, end, students);
+    } else {
+      await _openPeriodDialog(day, start, end, true, periods, students);
+    }
+  }
+
+  Future<void> _openTimeBlockDialog(
+      DateTime day, int startMinute, int endMinute, List<Student> students,
+      {TimeBlockOccurrence? occurrence, String? preset}) async {
+    if (widget.api is! CalendarAvailabilityDataSource) return;
+    final source = widget.api as CalendarAvailabilityDataSource;
+    final initial = occurrence?.block ??
+        TimeBlock(
+          id: '',
+          title: '',
+          category: BlockCategory.other,
+          start: DateTime.utc(day.year, day.month, day.day, startMinute ~/ 60,
+              startMinute % 60),
+          end: DateTime.utc(
+              day.year, day.month, day.day, endMinute ~/ 60, endMinute % 60),
+          allDay: startMinute == 0 && endMinute == 1440,
+          repeat: BlockRepeat.never,
+        );
+    final result = await showDialog<TimeBlockResult>(
+        context: context,
+        builder: (context) => TimeBlockDialog(
+            initial: initial, occurrence: occurrence, preset: preset));
+    if (result == null || !mounted) return;
+    try {
+      if (result.action == TimeBlockAction.delete) {
+        if (occurrence != null &&
+            initial.repeat != BlockRepeat.never &&
+            result.scope == TimeBlockScope.occurrence) {
+          await source.changeTimeBlockOccurrence(initial.id, occurrence.date,
+              cancelled: true);
+        } else {
+          await source.deleteTimeBlock(initial.id);
+        }
+      } else {
+        final changed = result.block;
+        final occurrenceOnly = occurrence != null &&
+            initial.repeat != BlockRepeat.never &&
+            result.scope == TimeBlockScope.occurrence;
+        final candidate = occurrenceOnly
+            ? TimeBlockOccurrence(
+                changed, occurrence.date, changed.start, changed.end)
+            : null;
+        final events = _eventsForStudents(
+            visibleStudentsForTeacher(students, widget.teacher));
+        var conflicts = 0;
+        for (final event in events) {
+          if (event.course.status == 'CANCELED' || event.course.hour == null) {
+            continue;
+          }
+          final overlaps = occurrenceOnly
+              ? [candidate!]
+              : changed.occurrences(event.start, event.start);
+          for (final block in overlaps) {
+            final lessonStart = DateTime.utc(
+                event.start.year,
+                event.start.month,
+                event.start.day,
+                event.start.hour,
+                event.start.minute);
+            final lessonEnd =
+                lessonStart.add(Duration(minutes: event.durationMinutes));
+            if (block.start.isBefore(lessonEnd) &&
+                block.end.isAfter(lessonStart)) {
+              conflicts++;
+              break;
+            }
+          }
+        }
+        if (conflicts > 0) {
+          final proceed = await showDialog<bool>(
+              context: context,
+              builder: (context) => AlertDialog(
+                    title: const Text('Existing lessons overlap'),
+                    content: Text(
+                        '$conflicts scheduled lesson(s) overlap this block. '
+                        'They will remain scheduled.'),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Cancel')),
+                      FilledButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Save anyway')),
+                    ],
+                  ));
+          if (proceed != true) return;
+        }
+        if (occurrenceOnly) {
+          await source.changeTimeBlockOccurrence(initial.id, occurrence.date,
+              start: changed.start,
+              end: changed.end,
+              title: changed.title,
+              category: changed.category,
+              notes: changed.notes);
+        } else {
+          await source.saveTimeBlock(changed);
+        }
+      }
+      if (mounted) setState(_loadAvailability);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not save blocked time: $error')));
+      }
+    }
+  }
+
+  Future<void> _copyDay(DateTime sourceDay) async {
+    if (widget.api is! CalendarAvailabilityDataSource) return;
+    final source = widget.api as CalendarAvailabilityDataSource;
+    final selected = <int>{};
+    final weekdays = [1, 2, 3, 4, 5, 6, 7];
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => StatefulBuilder(
+            builder: (context, update) => AlertDialog(
+                  title:
+                      Text('Copy ${DateFormat.EEEE().format(sourceDay)} hours'),
+                  content: SizedBox(
+                      width: 300,
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        for (final weekday in weekdays)
+                          if (weekday != sourceDay.weekday)
+                            CheckboxListTile(
+                              title: Text(DateFormat.EEEE().format(
+                                  sourceDay.add(Duration(
+                                      days: weekday - sourceDay.weekday)))),
+                              value: selected.contains(weekday),
+                              onChanged: (value) => update(() => value == true
+                                  ? selected.add(weekday)
+                                  : selected.remove(weekday)),
+                            ),
+                      ])),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Cancel')),
+                    FilledButton(
+                        onPressed: selected.isEmpty
+                            ? null
+                            : () => Navigator.pop(context, true),
+                        child: const Text('Copy')),
+                  ],
+                )));
+    if (confirmed != true) return;
+    try {
+      await source.copyAvailabilityDay(sourceDay, selected.toList());
+      if (mounted) setState(_loadAvailability);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not copy hours: $error')));
+      }
+    }
   }
 
   Future<void> _showEventDetails(_LessonEvent event) async {
@@ -295,6 +1011,237 @@ class _CalendarScreenState extends State<CalendarScreen> {
     );
   }
 }
+
+class _PeriodDraft {
+  const _PeriodDraft(this.recurring, this.available, this.start, this.end)
+      : delete = false;
+  const _PeriodDraft.delete()
+      : recurring = false,
+        available = false,
+        start = 0,
+        end = 0,
+        delete = true;
+  final bool recurring;
+  final bool available;
+  final int start;
+  final int end;
+  final bool delete;
+}
+
+class _AvailabilityDay extends StatefulWidget {
+  const _AvailabilityDay({
+    required this.day,
+    required this.periods,
+    required this.busy,
+    required this.blocks,
+    required this.events,
+    required this.onSelect,
+    required this.onBlockEdit,
+    required this.onEdit,
+    required this.onCopy,
+  });
+  final DateTime day;
+  final List<AvailabilityPeriod> periods;
+  final List<BusyPeriod> busy;
+  final List<TimeBlock> blocks;
+  final List<_LessonEvent> events;
+  final void Function(DateTime, int, int) onSelect;
+  final ValueChanged<TimeBlockOccurrence> onBlockEdit;
+  final ValueChanged<AvailabilityPeriod> onEdit;
+  final VoidCallback onCopy;
+
+  @override
+  State<_AvailabilityDay> createState() => _AvailabilityDayState();
+}
+
+class _AvailabilityDayState extends State<_AvailabilityDay> {
+  int? _dragStart;
+  int? _dragEnd;
+  static const _rowHeight = 32.0;
+
+  int _minuteFor(double dy) => ((dy / _rowHeight).floor().clamp(0, 47)) * 30;
+
+  @override
+  Widget build(BuildContext context) {
+    const calculator = AvailabilityCalculator();
+    final dayBlocks = [
+      for (final block in widget.blocks)
+        ...block.occurrences(widget.day, widget.day)
+    ];
+    final blockSlices = <TimeBlockOccurrence, BusyPeriod>{
+      for (final block in dayBlocks)
+        if (block.slice(widget.day) case final slice?) block: slice,
+    };
+    final segments = calculator.segmentsForDay(
+        widget.day, widget.periods, [...widget.busy, ...blockSlices.values]);
+    final dayPeriods = widget.periods
+        .where((period) => period.appliesTo(widget.day))
+        .toList()
+      ..sort((a, b) => a.startMinute.compareTo(b.startMinute));
+    return Container(
+      decoration: const BoxDecoration(
+          border: Border(right: BorderSide(color: MaestroColors.border))),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        SizedBox(
+            height: 72,
+            child: Column(children: [
+              Text(DateFormat('EEE d').format(widget.day).toUpperCase(),
+                  style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: _isSameDay(widget.day, DateTime.now())
+                          ? MaestroColors.primary
+                          : MaestroColors.text)),
+              TextButton(
+                  onPressed: widget.onCopy,
+                  child:
+                      const Text('Copy hours', style: TextStyle(fontSize: 11))),
+            ])),
+        SizedBox(
+            height: 84,
+            child: SingleChildScrollView(
+                child: Wrap(
+              spacing: 3,
+              runSpacing: 3,
+              children: [
+                for (final period in dayPeriods)
+                  ActionChip(
+                      onPressed: () => widget.onEdit(period),
+                      label: Text(
+                          '${period.available ? '✓' : '✕'} '
+                          '${clockLabel(period.startMinute)}–'
+                          '${clockLabel(period.endMinute)}',
+                          style: const TextStyle(fontSize: 10)),
+                      backgroundColor: period.date == null
+                          ? period.available
+                              ? const Color(0xFFE1F3E6)
+                              : const Color(0xFFF5E3E3)
+                          : const Color(0xFFFFEBD0)),
+                for (final block in dayBlocks)
+                  ActionChip(
+                      onPressed: () => widget.onBlockEdit(block),
+                      label: Text(block.displayTitle,
+                          style: const TextStyle(fontSize: 10)),
+                      backgroundColor: _blockColor(block.displayCategory)),
+              ],
+            ))),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapUp: (details) {
+            final start = _minuteFor(details.localPosition.dy);
+            final block = blockSlices.entries
+                .where((entry) =>
+                    entry.value.startMinute < start + 30 &&
+                    entry.value.endMinute > start)
+                .firstOrNull;
+            if (block != null) {
+              widget.onBlockEdit(block.key);
+              return;
+            }
+            widget.onSelect(widget.day, start, start + 30);
+          },
+          onLongPressStart: (details) => setState(() {
+            _dragStart = _minuteFor(details.localPosition.dy);
+            _dragEnd = _dragStart;
+          }),
+          onLongPressMoveUpdate: (details) => setState(() {
+            _dragEnd = _minuteFor(details.localPosition.dy);
+          }),
+          onLongPressEnd: (_) {
+            final start = _dragStart;
+            final end = _dragEnd;
+            setState(() {
+              _dragStart = null;
+              _dragEnd = null;
+            });
+            if (start != null && end != null) {
+              widget.onSelect(widget.day, start < end ? start : end,
+                  (start > end ? start : end) + 30);
+            }
+          },
+          child: Column(children: [
+            for (var index = 0; index < 48; index++)
+              Builder(builder: (context) {
+                final minute = index * 30;
+                final segment = segments.firstWhere((segment) =>
+                    segment.startMinute <= minute &&
+                    segment.endMinute > minute);
+                final lesson = widget.events
+                    .where((event) =>
+                        _isSameDay(event.start, widget.day) &&
+                        event.start.hour * 60 + event.start.minute <
+                            minute + 30 &&
+                        event.start.hour * 60 +
+                                event.start.minute +
+                                event.durationMinutes >
+                            minute)
+                    .firstOrNull;
+                final selected = _dragStart != null &&
+                    _dragEnd != null &&
+                    minute >=
+                        (_dragStart! < _dragEnd! ? _dragStart! : _dragEnd!) &&
+                    minute <=
+                        (_dragStart! > _dragEnd! ? _dragStart! : _dragEnd!);
+                final block = blockSlices.entries
+                    .where((entry) =>
+                        entry.value.startMinute < minute + 30 &&
+                        entry.value.endMinute > minute)
+                    .firstOrNull;
+                final explicitlyUnavailable = dayPeriods.any((period) =>
+                    !period.available &&
+                    period.startMinute < minute + 30 &&
+                    period.endMinute > minute);
+                final color = selected
+                    ? const Color(0xFFC9D8FF)
+                    : block != null
+                        ? _blockColor(block.key.displayCategory)
+                        : lesson != null
+                            ? const Color(0xFFDDEBFF)
+                            : explicitlyUnavailable && !segment.available
+                                ? const Color(0xFFF5DADB)
+                                : segment.available
+                                    ? const Color(0xFFE1F3E6)
+                                    : const Color(0xFFF4F5F6);
+                return Container(
+                    height: _rowHeight,
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    decoration: BoxDecoration(
+                        color: color,
+                        border: const Border(
+                            top: BorderSide(color: MaestroColors.border))),
+                    child: Row(children: [
+                      Text(clockLabel(minute),
+                          style: const TextStyle(
+                              color: MaestroColors.muted, fontSize: 10)),
+                      const SizedBox(width: 4),
+                      Expanded(
+                          child: Text(
+                              lesson?.studentName ??
+                                  (block?.key.displayTitle ??
+                                      (segment.occupied
+                                          ? 'Occupied'
+                                          : segment.available
+                                              ? 'Available'
+                                              : '')),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 10, fontWeight: FontWeight.w700))),
+                    ]));
+              }),
+          ]),
+        ),
+      ]),
+    );
+  }
+}
+
+Color _blockColor(BlockCategory category) => switch (category) {
+      BlockCategory.sleep => const Color(0xFFE0E1E5),
+      BlockCategory.vacation ||
+      BlockCategory.personal =>
+        const Color(0xFFFFE4C3),
+      BlockCategory.breakTime || BlockCategory.other => const Color(0xFFF5DADB),
+    };
 
 class _Toolbar extends StatelessWidget {
   const _Toolbar({
@@ -609,7 +1556,7 @@ class _WeekView extends StatelessWidget {
   Widget build(BuildContext context) {
     final days = List.generate(
       7,
-      (index) => _startOfWeek(selectedDate).add(Duration(days: index)),
+      (index) => _addCalendarDays(_startOfWeek(selectedDate), index),
     );
     return MaestroCard(
       child: events.isEmpty
@@ -735,7 +1682,7 @@ class _Timeline extends StatelessWidget {
                           3,
                       left: 6,
                       right: 6,
-                      height: _eventHeight(lessonDurationMinutes),
+                      height: _eventHeight(event.durationMinutes),
                       child: _EventCard(event: event, onTap: onOpenEvent),
                     ),
                 ],
@@ -1254,9 +2201,12 @@ DateTime _combine(DateTime date, String? hour) {
 DateTime _dateOnly(DateTime value) =>
     DateTime(value.year, value.month, value.day);
 
+DateTime _addCalendarDays(DateTime value, int days) =>
+    DateTime(value.year, value.month, value.day + days);
+
 DateTime _startOfWeek(DateTime value) {
   final date = _dateOnly(value);
-  return date.subtract(Duration(days: date.weekday - DateTime.monday));
+  return _addCalendarDays(date, DateTime.monday - date.weekday);
 }
 
 bool _isSameDay(DateTime first, DateTime second) {
@@ -1268,7 +2218,7 @@ bool _isSameDay(DateTime first, DateTime second) {
 List<DateTime> _monthGridDays(DateTime selectedDate) {
   final monthStart = DateTime(selectedDate.year, selectedDate.month);
   final first = _startOfWeek(monthStart);
-  return List.generate(42, (index) => first.add(Duration(days: index)));
+  return List.generate(42, (index) => _addCalendarDays(first, index));
 }
 
 String _periodTitle(DateTime selectedDate, _CalendarView view) {
@@ -1281,7 +2231,7 @@ String _periodTitle(DateTime selectedDate, _CalendarView view) {
 
 String _weekTitle(DateTime selectedDate) {
   final start = _startOfWeek(selectedDate);
-  final end = start.add(const Duration(days: 6));
+  final end = _addCalendarDays(start, 6);
   if (start.year == end.year && start.month == end.month) {
     return '${DateFormat.MMMM().format(start)} ${start.day} - ${end.day}, ${end.year}';
   }

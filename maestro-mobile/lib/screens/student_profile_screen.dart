@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/course_note.dart';
+import '../models/course_filter.dart';
 import '../models/payment.dart';
 import '../models/student.dart';
 import '../models/student_course.dart';
@@ -36,9 +37,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   final Set<int> _openCourses = {};
   final Set<int> _creatingCourseProjectIds = {};
   final Map<int, int> _selectedCourseIdsByProject = {};
+  CourseFilter? _courseFilter;
+  DateTime _courseMonth = DateTime(DateTime.now().year, DateTime.now().month);
   _ProfileData? _profileData;
 
-  static const _tabs = ['Courses', 'Projects / Pieces', 'Payments'];
+  static const _tabs = ['Courses', 'Pieces', 'Payment'];
 
   @override
   void initState() {
@@ -80,6 +83,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   Widget _content(_ProfileData data) {
     _profileData = data;
     final student = data.student;
+    final today = DateTime.now();
+    final courseFilter = _courseFilter ??
+        (widget.initialCourseId != null
+            ? CourseFilter.all
+            : defaultCourseFilter(student, today));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -105,6 +113,12 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
               _CoursesSection(
                 student: student,
                 payments: data.payments,
+                filter: courseFilter,
+                month: _courseMonth,
+                today: today,
+                onFilterChanged: (value) =>
+                    setState(() => _courseFilter = value),
+                onMonthChanged: (value) => setState(() => _courseMonth = value),
                 openCourses: _openCourses,
                 creatingCourseProjectIds: _creatingCourseProjectIds,
                 selectedCourseIdsByProject: _selectedCourseIdsByProject,
@@ -526,6 +540,11 @@ class _CoursesSection extends StatelessWidget {
   const _CoursesSection({
     required this.student,
     required this.payments,
+    required this.filter,
+    required this.month,
+    required this.today,
+    required this.onFilterChanged,
+    required this.onMonthChanged,
     required this.openCourses,
     required this.creatingCourseProjectIds,
     required this.selectedCourseIdsByProject,
@@ -548,6 +567,11 @@ class _CoursesSection extends StatelessWidget {
 
   final Student student;
   final List<Payment> payments;
+  final CourseFilter filter;
+  final DateTime month;
+  final DateTime today;
+  final ValueChanged<CourseFilter> onFilterChanged;
+  final ValueChanged<DateTime> onMonthChanged;
   final Set<int> openCourses;
   final Set<int> creatingCourseProjectIds;
   final Map<int, int> selectedCourseIdsByProject;
@@ -574,8 +598,113 @@ class _CoursesSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final courses =
+        filteredCourseListings(student, filter, today: today, month: month);
     return ListView(
       children: [
+        MaestroCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  for (final option in CourseFilter.values)
+                    ChoiceChip(
+                      label: Text(switch (option) {
+                        CourseFilter.all => 'Tous les cours',
+                        CourseFilter.current => 'Cours actuel',
+                        CourseFilter.month => 'Ce mois',
+                        CourseFilter.upcoming => 'Cours à venir',
+                        CourseFilter.past => 'Cours passés',
+                      }),
+                      selected: filter == option,
+                      onSelected: (_) => onFilterChanged(option),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                ],
+              ),
+              if (filter == CourseFilter.month) ...[
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    IconButton(
+                      tooltip: 'Previous month',
+                      onPressed: () =>
+                          onMonthChanged(DateTime(month.year, month.month - 1)),
+                      icon: const Icon(Icons.chevron_left),
+                    ),
+                    Text(DateFormat.yMMMM().format(month)),
+                    IconButton(
+                      tooltip: 'Next month',
+                      onPressed: () =>
+                          onMonthChanged(DateTime(month.year, month.month + 1)),
+                      icon: const Icon(Icons.chevron_right),
+                    ),
+                    TextButton(
+                      onPressed: () =>
+                          onMonthChanged(DateTime(today.year, today.month)),
+                      child: const Text('Today'),
+                    ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: 6),
+              Text(
+                  '${courses.length} ${courses.length == 1 ? 'course' : 'courses'}'),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        if (courses.isEmpty)
+          MaestroCard(
+              child: _EmptyState(
+                  message: switch (filter) {
+            CourseFilter.current => 'No course scheduled this week.',
+            CourseFilter.month => 'No courses in this month.',
+            CourseFilter.upcoming => 'No upcoming courses.',
+            CourseFilter.past => 'No past courses.',
+            CourseFilter.all => 'No courses yet.',
+          })),
+        for (final listing in courses) ...[
+          if (student.projects.length > 1)
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 4),
+              child: Text(listing.project.name,
+                  style: Theme.of(context).textTheme.labelMedium),
+            ),
+          _CourseTile(
+            key: ValueKey(listing.course.id),
+            student: student,
+            project: listing.project,
+            course: listing.course,
+            courseNumber: student.courseNumberForId(listing.course.id),
+            selected: listing.course.id ==
+                selectedCourseIdsByProject[listing.project.id],
+            priceLeft: _priceLeft(listing.project.courses, payments),
+            dueReviews: _dueReviewsForCourse(student, listing.course),
+            onSelect: onSelectCourse,
+            initiallyOpen: openCourses.contains(listing.course.id),
+            onOpenChanged: (open) {
+              if (open) {
+                openCourses.add(listing.course.id);
+              } else {
+                openCourses.remove(listing.course.id);
+              }
+            },
+            onEdit: onEditCourse,
+            onDelete: onDeleteCourse,
+            onSaveNote: onSaveNote,
+            onDeleteNote: onDeleteNote,
+            onApplyFutureNotes: onApplyFutureNotes,
+            onMarkReviewReviewed: onMarkReviewReviewed,
+            onKeepReview: onKeepReview,
+          ),
+        ],
+        const SizedBox(height: 8),
         for (final project in student.projects) ...[
           Builder(builder: (context) {
             final creatingCourse =
@@ -686,39 +815,6 @@ class _CoursesSection extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  if (project.courses.isEmpty)
-                    const _EmptyState(message: 'No courses yet')
-                  else
-                    for (var index = 0; index < project.courses.length; index++)
-                      _CourseTile(
-                        key: ValueKey(project.courses[index].id),
-                        student: student,
-                        project: project,
-                        course: project.courses[index],
-                        courseNumber: student
-                            .courseNumberForId(project.courses[index].id),
-                        selected: project.courses[index].id == selectedCourseId,
-                        priceLeft: _priceLeft(project.courses, payments),
-                        dueReviews: _dueReviewsForCourse(
-                            student, project.courses[index]),
-                        onSelect: onSelectCourse,
-                        initiallyOpen:
-                            openCourses.contains(project.courses[index].id),
-                        onOpenChanged: (open) {
-                          if (open) {
-                            openCourses.add(project.courses[index].id);
-                          } else {
-                            openCourses.remove(project.courses[index].id);
-                          }
-                        },
-                        onEdit: onEditCourse,
-                        onDelete: onDeleteCourse,
-                        onSaveNote: onSaveNote,
-                        onDeleteNote: onDeleteNote,
-                        onApplyFutureNotes: onApplyFutureNotes,
-                        onMarkReviewReviewed: onMarkReviewReviewed,
-                        onKeepReview: onKeepReview,
-                      ),
                 ],
               ),
             );
@@ -829,6 +925,52 @@ class _CourseTileState extends State<_CourseTile> {
   @override
   Widget build(BuildContext context) {
     final course = widget.course;
+    final statusBadge = StatusBadge(
+      label: switch (course.status) {
+        'PRESENT' => 'Completed',
+        'ABSENT' => 'Absent',
+        'CANCELED' => 'Cancelled',
+        'MOVED' => 'Moved',
+        'SCHEDULED' || 'NOTHING' => 'Scheduled',
+        _ => course.status,
+      },
+      tone: switch (course.status) {
+        'PRESENT' => StatusTone.success,
+        'ABSENT' || 'CANCELED' => StatusTone.danger,
+        _ => StatusTone.warning,
+      },
+    );
+    final reviewIndicator = widget.dueReviews.isEmpty
+        ? const SizedBox.shrink()
+        : const Tooltip(
+            message: 'Scheduled review',
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 5),
+              child: Icon(Icons.event_note,
+                  size: 17, color: MaestroColors.warningText),
+            ),
+          );
+    final expandButton = IconButton(
+      tooltip: _open ? 'Close lesson' : 'Open lesson',
+      onPressed: () {
+        setState(() => _open = !_open);
+        widget.onOpenChanged(_open);
+      },
+      icon: Icon(_open ? Icons.expand_less : Icons.expand_more),
+    );
+    final courseTitle = Row(
+      children: [
+        Icon(
+          widget.selected
+              ? Icons.radio_button_checked
+              : Icons.radio_button_unchecked,
+          color: widget.selected ? MaestroColors.primary : MaestroColors.muted,
+        ),
+        const SizedBox(width: 8),
+        Text('Course ${widget.courseNumber}',
+            style: const TextStyle(fontWeight: FontWeight.w800)),
+      ],
+    );
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: InkWell(
@@ -852,38 +994,27 @@ class _CourseTileState extends State<_CourseTile> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Icon(
-                            widget.selected
-                                ? Icons.radio_button_checked
-                                : Icons.radio_button_unchecked,
-                            color: widget.selected
-                                ? MaestroColors.primary
-                                : MaestroColors.muted,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Course ${widget.courseNumber}',
-                            style: const TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                        ],
-                      ),
-                    ),
-                    StatusBadge(label: course.status),
-                    IconButton(
-                      tooltip: _open ? 'Close lesson' : 'Open lesson',
-                      onPressed: () {
-                        setState(() => _open = !_open);
-                        widget.onOpenChanged(_open);
-                      },
-                      icon: Icon(_open ? Icons.expand_less : Icons.expand_more),
-                    ),
-                  ],
-                ),
+                LayoutBuilder(builder: (context, constraints) {
+                  if (constraints.maxWidth < 330) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          Expanded(child: courseTitle),
+                          expandButton
+                        ]),
+                        const SizedBox(height: 4),
+                        Row(children: [statusBadge, reviewIndicator]),
+                      ],
+                    );
+                  }
+                  return Row(children: [
+                    Expanded(child: courseTitle),
+                    statusBadge,
+                    reviewIndicator,
+                    expandButton,
+                  ]);
+                }),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 18,
@@ -1296,7 +1427,7 @@ class _ProjectsSection extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Projects / Pieces',
+                  'Pieces',
                   style: Theme.of(context)
                       .textTheme
                       .titleMedium
@@ -1445,76 +1576,80 @@ class _PaymentsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final total =
         payments.fold<double>(0, (sum, payment) => sum + payment.amount);
-    return MaestroCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return ListView(
+      children: [
+        MaestroCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  'Payments',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w800),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Payment',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                  Text(NumberFormat.simpleCurrency().format(total)),
+                  const SizedBox(width: 12),
+                  ElevatedButton.icon(
+                    onPressed: () => onAddPayment(student),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add Payment'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  _Summary(
+                    label: 'Credit balance',
+                    value: NumberFormat.simpleCurrency()
+                        .format(student.paymentCreditBalance),
+                  ),
+                  _Summary(
+                    label: 'Lessons remaining',
+                    value: student.coursePrice <= 0
+                        ? '0'
+                        : '${(total / student.coursePrice).floor()}',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (errorMessage != null)
+                _EmptyState(message: errorMessage!)
+              else if (payments.isEmpty)
+                const _EmptyState(message: 'No payments yet')
+              else
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: payments.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final payment = payments[index];
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                          NumberFormat.simpleCurrency().format(payment.amount)),
+                      subtitle: Text([
+                        if (payment.paymentDate != null)
+                          DateFormat.yMMMd().format(payment.paymentDate!),
+                        if (payment.method?.isNotEmpty == true) payment.method!,
+                        if (payment.note?.isNotEmpty == true) payment.note!,
+                      ].join(' - ')),
+                    );
+                  },
                 ),
-              ),
-              Text(NumberFormat.simpleCurrency().format(total)),
-              const SizedBox(width: 12),
-              ElevatedButton.icon(
-                onPressed: () => onAddPayment(student),
-                icon: const Icon(Icons.add),
-                label: const Text('Add Payment'),
-              ),
             ],
           ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _Summary(
-                label: 'Credit balance',
-                value: NumberFormat.simpleCurrency()
-                    .format(student.paymentCreditBalance),
-              ),
-              _Summary(
-                label: 'Lessons remaining',
-                value: student.coursePrice <= 0
-                    ? '0'
-                    : '${(total / student.coursePrice).floor()}',
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (errorMessage != null)
-            _EmptyState(message: errorMessage!)
-          else if (payments.isEmpty)
-            const _EmptyState(message: 'No payments yet')
-          else
-            Expanded(
-              child: ListView.separated(
-                itemCount: payments.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (context, index) {
-                  final payment = payments[index];
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                        NumberFormat.simpleCurrency().format(payment.amount)),
-                    subtitle: Text([
-                      if (payment.paymentDate != null)
-                        DateFormat.yMMMd().format(payment.paymentDate!),
-                      if (payment.method?.isNotEmpty == true) payment.method!,
-                      if (payment.note?.isNotEmpty == true) payment.note!,
-                    ].join(' - ')),
-                  );
-                },
-              ),
-            ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -1534,6 +1669,11 @@ class _CourseDialogState extends State<_CourseDialog> {
           ? ''
           : DateFormat('yyyy-MM-dd').format(widget.course.date!));
   late final _hour = TextEditingController(text: widget.course.hour ?? '');
+  late int? _duration = widget.course.durationMinutes == 30 ||
+          widget.course.durationMinutes == 45 ||
+          widget.course.durationMinutes == 60
+      ? widget.course.durationMinutes!
+      : null;
   late final _price = TextEditingController(text: '${widget.course.price}');
   late final _assignment =
       TextEditingController(text: widget.course.assignment);
@@ -1602,6 +1742,17 @@ class _CourseDialogState extends State<_CourseDialog> {
                   controller: _hour,
                   decoration: const InputDecoration(labelText: 'Start time')),
               const SizedBox(height: 10),
+              DropdownButtonFormField<int>(
+                initialValue: _duration,
+                hint: const Text('Teacher default'),
+                decoration: const InputDecoration(labelText: 'Duration'),
+                items: const [30, 45, 60]
+                    .map((minutes) => DropdownMenuItem(
+                        value: minutes, child: Text('$minutes minutes')))
+                    .toList(),
+                onChanged: (value) => setState(() => _duration = value),
+              ),
+              const SizedBox(height: 10),
               TextField(
                   controller: _price,
                   keyboardType: TextInputType.number,
@@ -1654,6 +1805,7 @@ class _CourseDialogState extends State<_CourseDialog> {
       'day': _day,
       'date': dateText.isEmpty ? null : dateText,
       'hour': _hour.text.trim().isEmpty ? null : _hour.text.trim(),
+      if (_duration != null) 'durationMinutes': _duration,
       'price': price,
       'status': _status,
       'assignment': _assignment.text.trim(),

@@ -14,6 +14,7 @@ class Teacher {
     this.mainInstrument = '',
     this.otherInstruments = '',
     this.defaultLessonDuration = 60,
+    this.timezone = 'America/Toronto',
     this.defaultLessonPrice = 0,
     this.currency = 'CAD',
     this.profileImagePath = '',
@@ -33,6 +34,7 @@ class Teacher {
   final String mainInstrument;
   final String otherInstruments;
   final int defaultLessonDuration;
+  final String timezone;
   final double defaultLessonPrice;
   final String currency;
   final String profileImagePath;
@@ -53,6 +55,7 @@ class Teacher {
       mainInstrument: json['mainInstrument'] as String? ?? '',
       otherInstruments: json['otherInstruments'] as String? ?? '',
       defaultLessonDuration: json['defaultLessonDuration'] as int? ?? 60,
+      timezone: json['timezone'] as String? ?? 'America/Toronto',
       defaultLessonPrice: (json['defaultLessonPrice'] as num?)?.toDouble() ?? 0,
       currency: json['currency'] as String? ?? 'CAD',
       profileImagePath: json['profileImagePath'] as String? ?? '',

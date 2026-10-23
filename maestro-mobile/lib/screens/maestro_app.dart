@@ -47,10 +47,10 @@ class _MaestroAppState extends State<MaestroApp> {
   }
 
   void _clearTeacher() => setState(() {
-    _teacher = null;
-    _selectedStudent = null;
-    _section = AppSection.dashboard;
-  });
+        _teacher = null;
+        _selectedStudent = null;
+        _section = AppSection.dashboard;
+      });
 
   Future<void> _signOut() async {
     try {
@@ -151,6 +151,7 @@ class _MaestroAppState extends State<MaestroApp> {
           teacher: _teacher!,
           onOpenStudent: _openStudent,
           onOpenLesson: _openLesson,
+          onTeacherChanged: (teacher) => setState(() => _teacher = teacher),
         ),
       AppSection.payments => PaymentsScreen(
           api: widget.api,

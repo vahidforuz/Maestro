@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/config/supabase_environment.dart';
 import 'screens/maestro_app.dart';
+import 'screens/public_availability_screen.dart';
 import 'services/maestro_data_source.dart';
 import 'services/supabase_maestro_data_source.dart';
 import 'services/teacher_auth.dart';
@@ -25,6 +26,17 @@ Future<void> main() async {
     publishableKey: SupabaseEnvironment.publishableKey,
   );
   final client = Supabase.instance.client;
+  final segments =
+      Uri.base.pathSegments.where((part) => part.isNotEmpty).toList();
+  if (segments.length == 2 && segments.first == 'availability') {
+    runApp(MaterialApp(
+      title: 'Maestro availability',
+      theme: MaestroTheme.light(),
+      debugShowCheckedModeBanner: false,
+      home: PublicAvailabilityScreen(client: client, token: segments.last),
+    ));
+    return;
+  }
   runApp(
     MaestroMobileApp(
       api: SupabaseMaestroDataSource(client),
