@@ -595,6 +595,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       ]),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<bool>(
+                    isExpanded: true,
                     initialValue: recurring,
                     decoration: const InputDecoration(labelText: 'Apply to'),
                     items: const [
@@ -1083,7 +1084,7 @@ class _AvailabilityDayState extends State<_AvailabilityDay> {
           border: Border(right: BorderSide(color: MaestroColors.border))),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         SizedBox(
-            height: 72,
+            height: 68,
             child: Column(children: [
               Text(DateFormat('EEE d').format(widget.day).toUpperCase(),
                   style: TextStyle(
@@ -1096,34 +1097,6 @@ class _AvailabilityDayState extends State<_AvailabilityDay> {
                   child:
                       const Text('Copy hours', style: TextStyle(fontSize: 11))),
             ])),
-        SizedBox(
-            height: 84,
-            child: SingleChildScrollView(
-                child: Wrap(
-              spacing: 3,
-              runSpacing: 3,
-              children: [
-                for (final period in dayPeriods)
-                  ActionChip(
-                      onPressed: () => widget.onEdit(period),
-                      label: Text(
-                          '${period.available ? '✓' : '✕'} '
-                          '${clockLabel(period.startMinute)}–'
-                          '${clockLabel(period.endMinute)}',
-                          style: const TextStyle(fontSize: 10)),
-                      backgroundColor: period.date == null
-                          ? period.available
-                              ? const Color(0xFFE1F3E6)
-                              : const Color(0xFFF5E3E3)
-                          : const Color(0xFFFFEBD0)),
-                for (final block in dayBlocks)
-                  ActionChip(
-                      onPressed: () => widget.onBlockEdit(block),
-                      label: Text(block.displayTitle,
-                          style: const TextStyle(fontSize: 10)),
-                      backgroundColor: _blockColor(block.displayCategory)),
-              ],
-            ))),
         GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTapUp: (details) {
@@ -1135,6 +1108,22 @@ class _AvailabilityDayState extends State<_AvailabilityDay> {
                 .firstOrNull;
             if (block != null) {
               widget.onBlockEdit(block.key);
+              return;
+            }
+            final period = dayPeriods
+                .where((period) =>
+                    period.startMinute < start + 30 && period.endMinute > start)
+                .toList()
+              ..sort((a, b) {
+                final byDate =
+                    (b.date != null ? 1 : 0).compareTo(a.date != null ? 1 : 0);
+                if (byDate != 0) return byDate;
+                return a.endMinute -
+                    a.startMinute -
+                    (b.endMinute - b.startMinute);
+              });
+            if (period.isNotEmpty) {
+              widget.onEdit(period.first);
               return;
             }
             widget.onSelect(widget.day, start, start + 30);
@@ -1202,6 +1191,8 @@ class _AvailabilityDayState extends State<_AvailabilityDay> {
                                     ? const Color(0xFFE1F3E6)
                                     : const Color(0xFFF4F5F6);
                 return Container(
+                    key: ValueKey(
+                        'availability-grid-${dayNumber(widget.day)}-$minute'),
                     height: _rowHeight,
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     decoration: BoxDecoration(
@@ -1221,7 +1212,9 @@ class _AvailabilityDayState extends State<_AvailabilityDay> {
                                           ? 'Occupied'
                                           : segment.available
                                               ? 'Available'
-                                              : '')),
+                                              : explicitlyUnavailable
+                                                  ? 'Unavailable'
+                                                  : '')),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
