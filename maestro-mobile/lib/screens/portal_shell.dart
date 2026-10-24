@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/maestro_data_source.dart';
+import '../services/messaging_service.dart';
 import '../services/student_portal_service.dart';
 import '../services/teacher_auth.dart';
 import '../widgets/maestro_card.dart';
@@ -107,6 +108,7 @@ class _PortalShellState extends State<PortalShell> {
   }
 
   Future<void> _signOut() async {
+    await MessagingService.clearDownloadedFiles();
     await widget.auth.signOut();
     if (mounted) setState(() => _selected = null);
   }
@@ -121,6 +123,7 @@ class _PortalShellState extends State<PortalShell> {
           key: ValueKey(_sessionUserId),
           api: widget.api,
           auth: widget.auth,
+          client: widget.client,
           onSwitchStudent: _student
               ? () => setState(() => _selected = _Portal.student)
               : null);

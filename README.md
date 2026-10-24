@@ -31,7 +31,9 @@ Flutter now signs teachers in with Supabase Auth and reads/writes existing
 teacher, student, lesson, review, and payment workflows through Supabase.
 No Spring API is needed for the Flutter app. The Java modules remain for legacy
 desktop use and data migration. See [local development](docs/local-development.md)
-and [cutover status](docs/supabase-flutter-cutover.md).
+and [cutover status](docs/supabase-flutter-cutover.md). The new teacher/student
+messaging implementation and its local verification steps are in
+[messaging](docs/messaging.md).
 
 To start the local Supabase stack on Windows/WSL2, enable Docker Desktop's WSL
 integration for this distro, then run from the repository root:

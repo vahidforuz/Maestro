@@ -6,6 +6,7 @@ import 'screens/maestro_app.dart';
 import 'screens/portal_shell.dart';
 import 'screens/public_availability_screen.dart';
 import 'services/maestro_data_source.dart';
+import 'services/messaging_service.dart';
 import 'services/supabase_maestro_data_source.dart';
 import 'services/teacher_auth.dart';
 import 'theme/maestro_theme.dart';
@@ -26,6 +27,7 @@ Future<void> main() async {
     url: SupabaseEnvironment.url,
     publishableKey: SupabaseEnvironment.publishableKey,
   );
+  await MessagingService.clearDownloadedFiles();
   final client = Supabase.instance.client;
   final segments =
       Uri.base.pathSegments.where((part) => part.isNotEmpty).toList();

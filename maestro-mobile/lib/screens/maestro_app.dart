@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/student.dart';
 import '../models/teacher.dart';
 import '../services/maestro_data_source.dart';
+import '../services/messaging_service.dart';
+import '../services/messaging_inbox.dart';
 import '../services/teacher_auth.dart';
 import '../theme/maestro_theme.dart';
 import 'app_section.dart';
 import 'calendar_screen.dart';
+import 'messages_screen.dart';
 import 'dashboard_screen.dart';
 import 'payments_screen.dart';
 import 'settings_screen.dart';
@@ -17,10 +21,15 @@ import 'teacher_gate_screen.dart';
 
 class MaestroApp extends StatefulWidget {
   const MaestroApp(
-      {super.key, required this.api, required this.auth, this.onSwitchStudent});
+      {super.key,
+      required this.api,
+      required this.auth,
+      this.client,
+      this.onSwitchStudent});
 
   final MaestroDataSource api;
   final TeacherAuth auth;
+  final SupabaseClient? client;
   final VoidCallback? onSwitchStudent;
 
   @override
@@ -33,6 +42,7 @@ class _MaestroAppState extends State<MaestroApp> {
   int? _selectedCourseId;
   Teacher? _teacher;
   StreamSubscription<bool>? _authSubscription;
+  MessagingInbox? _inbox;
 
   @override
   void initState() {
@@ -45,17 +55,31 @@ class _MaestroAppState extends State<MaestroApp> {
   @override
   void dispose() {
     _authSubscription?.cancel();
+    _inbox?.dispose();
     super.dispose();
   }
 
-  void _clearTeacher() => setState(() {
-        _teacher = null;
-        _selectedStudent = null;
-        _section = AppSection.dashboard;
-      });
+  void _clearTeacher() {
+    _inbox?.dispose();
+    _inbox = null;
+    setState(() {
+      _teacher = null;
+      _selectedStudent = null;
+      _section = AppSection.dashboard;
+    });
+  }
+
+  void _signedIn(Teacher teacher) {
+    _inbox?.dispose();
+    if (widget.client != null) {
+      _inbox = MessagingInbox(MessagingService(widget.client!))..start();
+    }
+    setState(() => _teacher = teacher);
+  }
 
   Future<void> _signOut() async {
     try {
+      await MessagingService.clearDownloadedFiles();
       await widget.auth.signOut();
       if (mounted) _clearTeacher();
     } catch (error) {
@@ -74,7 +98,7 @@ class _MaestroAppState extends State<MaestroApp> {
         body: TeacherGateScreen(
           api: widget.api,
           auth: widget.auth,
-          onSignedIn: (teacher) => setState(() => _teacher = teacher),
+          onSignedIn: _signedIn,
         ),
       );
     }
@@ -89,6 +113,7 @@ class _MaestroAppState extends State<MaestroApp> {
             _Sidebar(
               section: _section,
               onSelect: _selectSection,
+              inbox: _inbox,
             ),
             Expanded(child: body),
           ],
@@ -102,28 +127,35 @@ class _MaestroAppState extends State<MaestroApp> {
         selectedIndex: AppSection.values.indexOf(_section),
         onDestinationSelected: (index) =>
             _selectSection(AppSection.values[index]),
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),
             selectedIcon: Icon(Icons.dashboard),
             label: 'Dashboard',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.people_outline),
             selectedIcon: Icon(Icons.people),
             label: 'Students',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.calendar_month_outlined),
             selectedIcon: Icon(Icons.calendar_month),
             label: 'Calendar',
           ),
           NavigationDestination(
+            icon: _MessageBadge(
+                inbox: _inbox, child: const Icon(Icons.chat_bubble_outline)),
+            selectedIcon: _MessageBadge(
+                inbox: _inbox, child: const Icon(Icons.chat_bubble)),
+            label: 'Messages',
+          ),
+          const NavigationDestination(
             icon: Icon(Icons.payments_outlined),
             selectedIcon: Icon(Icons.payments),
             label: 'Payments',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.settings_outlined),
             selectedIcon: Icon(Icons.settings),
             label: 'Settings',
@@ -155,6 +187,9 @@ class _MaestroAppState extends State<MaestroApp> {
           onOpenLesson: _openLesson,
           onTeacherChanged: (teacher) => setState(() => _teacher = teacher),
         ),
+      AppSection.messages => widget.client == null
+          ? const Center(child: Text('Messaging needs a Supabase connection.'))
+          : MessagesScreen(client: widget.client!, inbox: _inbox),
       AppSection.payments => PaymentsScreen(
           api: widget.api,
           teacher: _teacher!,
@@ -220,10 +255,12 @@ class _Sidebar extends StatelessWidget {
   const _Sidebar({
     required this.section,
     required this.onSelect,
+    required this.inbox,
   });
 
   final AppSection section;
   final ValueChanged<AppSection> onSelect;
+  final MessagingInbox? inbox;
 
   @override
   Widget build(BuildContext context) {
@@ -264,6 +301,7 @@ class _Sidebar extends StatelessWidget {
               label: item.label,
               selected: item == section,
               onTap: () => onSelect(item),
+              inbox: item == AppSection.messages ? inbox : null,
             ),
           const Spacer(),
         ],
@@ -277,11 +315,13 @@ class _SidebarItem extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.inbox,
   });
 
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final MessagingInbox? inbox;
 
   @override
   Widget build(BuildContext context) {
@@ -301,13 +341,58 @@ class _SidebarItem extends StatelessWidget {
         ),
         child: SizedBox(
           width: double.infinity,
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          child: Row(children: [
+            Expanded(
+                child:
+                    Text(label, maxLines: 1, overflow: TextOverflow.ellipsis)),
+            if (inbox != null) _UnreadPill(inbox: inbox!),
+          ]),
         ),
       ),
     );
+  }
+}
+
+class _UnreadPill extends StatelessWidget {
+  const _UnreadPill({required this.inbox});
+  final MessagingInbox inbox;
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+      animation: inbox,
+      builder: (_, __) {
+        final count = inbox.unreadCount;
+        if (count == 0) return const SizedBox.shrink();
+        return Container(
+            constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 5),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.error,
+                borderRadius: BorderRadius.circular(10)),
+            child: Text(count > 99 ? '99+' : '$count',
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold)));
+      });
+}
+
+class _MessageBadge extends StatelessWidget {
+  const _MessageBadge({required this.inbox, required this.child});
+  final MessagingInbox? inbox;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final value = inbox;
+    if (value == null) return child;
+    return AnimatedBuilder(
+        animation: value,
+        builder: (_, __) => Badge(
+            isLabelVisible: value.unreadCount > 0,
+            label:
+                Text(value.unreadCount > 99 ? '99+' : '${value.unreadCount}'),
+            child: child));
   }
 }

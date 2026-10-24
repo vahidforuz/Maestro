@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/student_portal_service.dart';
+import 'messages_screen.dart';
 import '../widgets/maestro_card.dart';
 
 class StudentPortalScreen extends StatefulWidget {
@@ -38,6 +39,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen>
     'My Reviews',
     'My Pieces',
     'Payments',
+    'Messages',
     'My Profile'
   ];
   static const _icons = [
@@ -47,6 +49,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen>
     Icons.rate_review_outlined,
     Icons.music_note_outlined,
     Icons.payments_outlined,
+    Icons.chat_bubble_outline,
     Icons.person_outline
   ];
 
@@ -109,39 +112,41 @@ class _StudentPortalScreenState extends State<StudentPortalScreen>
   }
 
   @override
-  Widget build(BuildContext context) =>
-      FutureBuilder<List<Map<String, dynamic>>>(
-          future: _future,
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return Scaffold(
-                  body: Center(
-                      child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Text('Could not load your portal: ${snapshot.error}'),
-                TextButton(onPressed: _refresh, child: const Text('Try again')),
-              ])));
-            }
-            if (!snapshot.hasData) {
-              return const Scaffold(
-                  body: Center(child: CircularProgressIndicator()));
-            }
-            final portals = snapshot.data!;
-            if (portals.isEmpty) {
-              return Scaffold(
-                  body: Center(
-                      child: Column(mainAxisSize: MainAxisSize.min, children: [
-                const Text(
-                    'Student access is not active. Ask your teacher for an invitation.'),
-                TextButton(onPressed: _refresh, child: const Text('Refresh')),
-                TextButton(
-                    onPressed: widget.onSignOut, child: const Text('Sign out')),
-              ])));
-            }
-            final portal = portals.firstWhere(
-                (item) => item['teacherId'] == _selectedTeacher,
-                orElse: () => portals.first);
-            final wide = MediaQuery.sizeOf(context).width >= 850;
-            final body = RefreshIndicator(
+  Widget build(BuildContext context) => FutureBuilder<
+          List<Map<String, dynamic>>>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Scaffold(
+              body: Center(
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text('Could not load your portal: ${snapshot.error}'),
+            TextButton(onPressed: _refresh, child: const Text('Try again')),
+          ])));
+        }
+        if (!snapshot.hasData) {
+          return const Scaffold(
+              body: Center(child: CircularProgressIndicator()));
+        }
+        final portals = snapshot.data!;
+        if (portals.isEmpty) {
+          return Scaffold(
+              body: Center(
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text(
+                'Student access is not active. Ask your teacher for an invitation.'),
+            TextButton(onPressed: _refresh, child: const Text('Refresh')),
+            TextButton(
+                onPressed: widget.onSignOut, child: const Text('Sign out')),
+          ])));
+        }
+        final portal = portals.firstWhere(
+            (item) => item['teacherId'] == _selectedTeacher,
+            orElse: () => portals.first);
+        final wide = MediaQuery.sizeOf(context).width >= 850;
+        final body = _section == 6
+            ? MessagesScreen(client: widget.client, teacher: false)
+            : RefreshIndicator(
                 onRefresh: () async {
                   _refresh();
                   await _future;
@@ -170,52 +175,51 @@ class _StudentPortalScreenState extends State<StudentPortalScreen>
                   const SizedBox(height: 14),
                   _content(portal),
                 ]));
-            return Scaffold(
-              drawer: wide
-                  ? null
-                  : Drawer(
-                      child: SafeArea(
-                          child: ListView(children: [
-                      const ListTile(title: Text('Student Portal')),
-                      for (var i = 0; i < _titles.length; i++)
-                        ListTile(
-                            selected: _section == i,
-                            leading: Icon(_icons[i]),
-                            title: Text(_titles[i]),
-                            onTap: () {
-                              Navigator.pop(context);
-                              setState(() => _section = i);
-                            }),
-                    ]))),
-              appBar: AppBar(title: const Text('Maestro · Student'), actions: [
-                if (widget.canSwitchTeacher)
-                  IconButton(
-                      onPressed: widget.onSwitchTeacher,
-                      tooltip: 'Teacher Portal',
-                      icon: const Icon(Icons.school_outlined)),
-                IconButton(
-                    onPressed: widget.onSignOut,
-                    tooltip: 'Sign out',
-                    icon: const Icon(Icons.logout)),
-              ]),
-              body: wide
-                  ? Row(children: [
-                      NavigationRail(
-                          selectedIndex: _section,
-                          onDestinationSelected: (value) =>
-                              setState(() => _section = value),
-                          labelType: NavigationRailLabelType.all,
-                          destinations: [
-                            for (var i = 0; i < _titles.length; i++)
-                              NavigationRailDestination(
-                                  icon: Icon(_icons[i]),
-                                  label: Text(_titles[i]))
-                          ]),
-                      Expanded(child: body),
-                    ])
-                  : body,
-            );
-          });
+        return Scaffold(
+          drawer: wide
+              ? null
+              : Drawer(
+                  child: SafeArea(
+                      child: ListView(children: [
+                  const ListTile(title: Text('Student Portal')),
+                  for (var i = 0; i < _titles.length; i++)
+                    ListTile(
+                        selected: _section == i,
+                        leading: Icon(_icons[i]),
+                        title: Text(_titles[i]),
+                        onTap: () {
+                          Navigator.pop(context);
+                          setState(() => _section = i);
+                        }),
+                ]))),
+          appBar: AppBar(title: const Text('Maestro · Student'), actions: [
+            if (widget.canSwitchTeacher)
+              IconButton(
+                  onPressed: widget.onSwitchTeacher,
+                  tooltip: 'Teacher Portal',
+                  icon: const Icon(Icons.school_outlined)),
+            IconButton(
+                onPressed: widget.onSignOut,
+                tooltip: 'Sign out',
+                icon: const Icon(Icons.logout)),
+          ]),
+          body: wide
+              ? Row(children: [
+                  NavigationRail(
+                      selectedIndex: _section,
+                      onDestinationSelected: (value) =>
+                          setState(() => _section = value),
+                      labelType: NavigationRailLabelType.all,
+                      destinations: [
+                        for (var i = 0; i < _titles.length; i++)
+                          NavigationRailDestination(
+                              icon: Icon(_icons[i]), label: Text(_titles[i]))
+                      ]),
+                  Expanded(child: body),
+                ])
+              : body,
+        );
+      });
 
   Widget _content(Map<String, dynamic> data) {
     final courses = _list(data, 'courses');
