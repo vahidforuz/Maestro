@@ -18,8 +18,8 @@ PASSWORD = "LocalMaestro123!"
 EXPECTED = {
     "ada.teacher@maestro.example": ({11, 12, 15}, {201}),
     "ben.teacher@maestro.example": ({13, 14, 15}, {202}),
-    "aria.student@maestro.example": ({11}, {201}),
-    "nora.student@maestro.example": ({13}, {202}),
+    "aria.student@maestro.example": (set(), set()),
+    "nora.student@maestro.example": (set(), set()),
     "pat.parent@maestro.example": ({11, 12}, {201}),
     "ren.parent@maestro.example": ({13, 14}, set()),
 }
@@ -108,13 +108,14 @@ def main() -> int:
     finance_path = "/rest/v1/rpc/get_student_finances"
     aria_id = "30000000-0000-0000-0000-000000000011"
     nora_id = "30000000-0000-0000-0000-000000000013"
-    for email in ("ada.teacher@maestro.example", "aria.student@maestro.example",
-                  "pat.parent@maestro.example"):
+    for email in ("ada.teacher@maestro.example", "pat.parent@maestro.example"):
         values = request(url, key, finance_path, tokens[email],
                          body={"p_student_id": aria_id})
         if float(values["coursePrice"]) != 20:
             raise AssertionError(f"{email} received wrong finance values")
     expect_denied(url, key, finance_path, tokens["ben.teacher@maestro.example"],
+                  body={"p_student_id": aria_id})
+    expect_denied(url, key, finance_path, tokens["aria.student@maestro.example"],
                   body={"p_student_id": aria_id})
     expect_denied(url, key, finance_path, tokens["ren.parent@maestro.example"],
                   body={"p_student_id": nora_id})
@@ -145,12 +146,11 @@ def main() -> int:
     request(url, key, storage_path, ada, raw=image, method="POST")
     try:
         read_path = f"/storage/v1/object/authenticated/maestro-private/{object_path}"
-        for email in ("ada.teacher@maestro.example", "aria.student@maestro.example",
-                      "pat.parent@maestro.example"):
+        for email in ("ada.teacher@maestro.example", "pat.parent@maestro.example"):
             if request(url, key, read_path, tokens[email]) != image:
                 raise AssertionError(f"{email} could not read authorized media")
-        for email in ("ben.teacher@maestro.example", "nora.student@maestro.example",
-                      "ren.parent@maestro.example"):
+        for email in ("ben.teacher@maestro.example", "aria.student@maestro.example",
+                      "nora.student@maestro.example", "ren.parent@maestro.example"):
             expect_denied(url, key, read_path, tokens[email])
         print("PASS private Storage: authorized readers only")
     finally:

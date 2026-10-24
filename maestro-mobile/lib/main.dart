@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/config/supabase_environment.dart';
 import 'screens/maestro_app.dart';
+import 'screens/portal_shell.dart';
 import 'screens/public_availability_screen.dart';
 import 'services/maestro_data_source.dart';
 import 'services/supabase_maestro_data_source.dart';
@@ -41,15 +42,18 @@ Future<void> main() async {
     MaestroMobileApp(
       api: SupabaseMaestroDataSource(client),
       auth: SupabaseTeacherAuth(client),
+      client: client,
     ),
   );
 }
 
 class MaestroMobileApp extends StatelessWidget {
-  const MaestroMobileApp({super.key, required this.api, required this.auth});
+  const MaestroMobileApp(
+      {super.key, required this.api, required this.auth, this.client});
 
   final MaestroDataSource api;
   final TeacherAuth auth;
+  final SupabaseClient? client;
 
   @override
   Widget build(BuildContext context) {
@@ -57,7 +61,9 @@ class MaestroMobileApp extends StatelessWidget {
       title: 'Maestro',
       debugShowCheckedModeBanner: false,
       theme: MaestroTheme.light(),
-      home: MaestroApp(api: api, auth: auth),
+      home: client == null
+          ? MaestroApp(api: api, auth: auth)
+          : PortalShell(client: client!, api: api, auth: auth),
     );
   }
 }

@@ -16,10 +16,12 @@ import 'students_screen.dart';
 import 'teacher_gate_screen.dart';
 
 class MaestroApp extends StatefulWidget {
-  const MaestroApp({super.key, required this.api, required this.auth});
+  const MaestroApp(
+      {super.key, required this.api, required this.auth, this.onSwitchStudent});
 
   final MaestroDataSource api;
   final TeacherAuth auth;
+  final VoidCallback? onSwitchStudent;
 
   @override
   State<MaestroApp> createState() => _MaestroAppState();
@@ -162,6 +164,7 @@ class _MaestroAppState extends State<MaestroApp> {
           teacher: _teacher!,
           onTeacherChanged: (teacher) => setState(() => _teacher = teacher),
           onSignOut: _signOut,
+          onSwitchStudent: widget.onSwitchStudent,
         ),
     };
   }

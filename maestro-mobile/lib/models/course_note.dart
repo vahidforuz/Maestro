@@ -12,6 +12,7 @@ class CourseNote {
     this.targetCourseId,
     this.reviewedDate,
     this.reviewHistory = '',
+    this.studentShared = false,
   });
 
   final int id;
@@ -26,6 +27,7 @@ class CourseNote {
   final int? targetCourseId;
   final DateTime? reviewedDate;
   final String reviewHistory;
+  final bool studentShared;
 
   factory CourseNote.fromJson(Map<String, dynamic> json) {
     return CourseNote(
@@ -41,6 +43,7 @@ class CourseNote {
       targetCourseId: json['targetCourseId'] as int?,
       reviewedDate: _parseDate(json['reviewedDate']),
       reviewHistory: json['reviewHistory'] as String? ?? '',
+      studentShared: json['studentShared'] as bool? ?? false,
     );
   }
 

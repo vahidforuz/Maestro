@@ -473,7 +473,7 @@ class SupabaseMaestroDataSource
         .from('lesson_notes')
         .select(
           'id,app_id,lesson_id,piece,comment,created_date,review_weeks,'
-          'review_date,review_status,source_lesson_id,accepted_lesson_id,'
+          'review_date,review_status,student_shared,source_lesson_id,accepted_lesson_id,'
           'target_lesson_id,reviewed_date,review_history,sort_order',
         )
         .eq('student_id', studentUuid)
@@ -510,6 +510,7 @@ class SupabaseMaestroDataSource
                   'targetCourseId': lessonIds[note['target_lesson_id']],
                   'reviewedDate': note['reviewed_date'],
                   'reviewHistory': note['review_history'],
+                  'studentShared': note['student_shared'],
                 })
             .toList();
         final course = <String, dynamic>{

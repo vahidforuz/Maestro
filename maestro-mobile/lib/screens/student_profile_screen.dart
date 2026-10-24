@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/student_portal_service.dart';
+import 'student_access_screen.dart';
 
 import '../models/course_note.dart';
 import '../models/course_filter.dart';
@@ -41,7 +43,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   DateTime _courseMonth = DateTime(DateTime.now().year, DateTime.now().month);
   _ProfileData? _profileData;
 
-  static const _tabs = ['Courses', 'Pieces', 'Payment'];
+  static const _tabs = ['Courses', 'Pieces', 'Payment', 'Student Access'];
 
   @override
   void initState() {
@@ -155,6 +157,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                     : _friendlyError(data.paymentsError),
                 onAddPayment: _addPayment,
               ),
+              _selectedTab == 3
+                  ? StudentAccessScreen(studentId: student.id)
+                  : const SizedBox.shrink(),
             ],
           ),
         ),
@@ -1259,6 +1264,30 @@ class _Notes extends StatelessWidget {
               trailing: Wrap(
                 spacing: 4,
                 children: [
+                  TextButton.icon(
+                    onPressed: () async {
+                      try {
+                        await StudentPortalService(Supabase.instance.client)
+                            .setNoteShared(note.id, !note.studentShared);
+                        if (context.mounted) {
+                          context
+                              .findAncestorStateOfType<
+                                  _StudentProfileScreenState>()
+                              ?._refresh();
+                        }
+                      } catch (error) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text(
+                                  'Could not update note sharing: $error')));
+                        }
+                      }
+                    },
+                    icon: Icon(note.studentShared
+                        ? Icons.visibility
+                        : Icons.visibility_off_outlined),
+                    label: Text(note.studentShared ? 'Shared' : 'Private'),
+                  ),
                   IconButton(
                     tooltip: 'Edit note',
                     icon: const Icon(Icons.edit),

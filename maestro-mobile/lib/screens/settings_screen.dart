@@ -12,12 +12,14 @@ class SettingsScreen extends StatefulWidget {
     required this.teacher,
     required this.onTeacherChanged,
     required this.onSignOut,
+    this.onSwitchStudent,
   });
 
   final MaestroDataSource api;
   final Teacher teacher;
   final ValueChanged<Teacher> onTeacherChanged;
   final VoidCallback onSignOut;
+  final VoidCallback? onSwitchStudent;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -83,6 +85,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               trailing: Wrap(
                 spacing: 10,
                 children: [
+                  if (widget.onSwitchStudent != null)
+                    OutlinedButton.icon(
+                      onPressed: widget.onSwitchStudent,
+                      icon: const Icon(Icons.music_note_outlined),
+                      label: const Text('Student Portal'),
+                    ),
                   OutlinedButton.icon(
                     onPressed: widget.onSignOut,
                     icon: const Icon(Icons.logout),
