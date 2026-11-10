@@ -15,6 +15,29 @@ class SupabaseTeacherAuth implements TeacherAuth {
 
   final SupabaseClient _client;
 
+  Map<String, dynamic>? get pendingTeacherProfile {
+    final user = _client.auth.currentUser;
+    if (user?.emailConfirmedAt == null) return null;
+    final value = user?.userMetadata?['maestro_teacher_profile'];
+    return value is Map ? Map<String, dynamic>.from(value) : null;
+  }
+
+  Future<bool> registerTeacher(String email, String password,
+      Map<String, dynamic> profile) async {
+    final response = await _client.auth.signUp(
+      email: email,
+      password: password,
+      data: {
+        'maestro_signup_kind': 'teacher',
+        'maestro_teacher_profile': profile,
+      },
+    );
+    return response.session != null;
+  }
+
+  Future<void> resetPassword(String email) =>
+      _client.auth.resetPasswordForEmail(email);
+
   @override
   bool get hasSession => _client.auth.currentSession != null;
 

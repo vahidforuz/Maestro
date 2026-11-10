@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/teacher.dart';
 import '../services/maestro_data_source.dart';
 import '../services/teacher_auth.dart';
 import '../widgets/maestro_card.dart';
 import '../widgets/section_header.dart';
+import 'teacher_registration_screen.dart';
 
 class TeacherGateScreen extends StatefulWidget {
   const TeacherGateScreen(
@@ -62,6 +64,28 @@ class _TeacherGateScreenState extends State<TeacherGateScreen> {
       } else {
         final canCreate = await widget.auth.canCreateTeacherProfile();
         if (!mounted) return;
+        final pending = widget.auth is SupabaseTeacherAuth
+            ? (widget.auth as SupabaseTeacherAuth).pendingTeacherProfile
+            : null;
+        if (canCreate && pending != null) {
+          var teacher = await widget.api.createTeacher({
+            ...pending,
+            'email': widget.auth.email,
+          });
+          if ((pending['studioName'] as String? ?? '').isNotEmpty ||
+              (pending['mainInstrument'] as String? ?? '').isNotEmpty ||
+              (pending['otherInstruments'] as String? ?? '').isNotEmpty ||
+              (pending['profileImagePath'] as String? ?? '').isNotEmpty) {
+            teacher = await widget.api.updateTeacher(teacher.id, {
+              'studioName': pending['studioName'],
+              'mainInstrument': pending['mainInstrument'],
+              'otherInstruments': pending['otherInstruments'],
+              'profileImagePath': pending['profileImagePath'],
+            });
+          }
+          if (mounted) widget.onSignedIn(teacher);
+          return;
+        }
         setState(() {
           _needsProfile = canCreate;
           _blockedAccount = !canCreate;
@@ -95,33 +119,35 @@ class _TeacherGateScreenState extends State<TeacherGateScreen> {
       await widget.auth.signIn(_email.text.trim(), _password.text);
       await _restore();
     } catch (error) {
-      if (mounted) setState(() => _message = 'Sign in failed: $error');
+      if (mounted) {
+        setState(() => _message = 'Sign in failed: '
+            '${error is AuthException ? error.message : error}');
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
   Future<void> _signUp() async {
-    if (_email.text.trim().isEmpty || _password.text.length < 6) {
-      setState(() =>
-          _message = 'Enter an email and a password of at least 6 characters.');
+    final registered = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => TeacherRegistrationScreen(auth: widget.auth)),
+    );
+    if (registered == true && mounted) await _restore();
+  }
+
+  Future<void> _forgotPassword() async {
+    final email = _email.text.trim();
+    if (email.isEmpty) {
+      setState(() => _message = 'Enter your email address first.');
       return;
     }
-    setState(() {
-      _busy = true;
-      _message = null;
-    });
+    if (widget.auth is! SupabaseTeacherAuth) return;
+    setState(() => _busy = true);
     try {
-      final signedIn =
-          await widget.auth.signUp(_email.text.trim(), _password.text);
-      if (signedIn) {
-        await _restore();
-      } else if (mounted) {
-        setState(() => _message =
-            'Check your email to confirm the account, then sign in.');
-      }
+      await (widget.auth as SupabaseTeacherAuth).resetPassword(email);
+      if (mounted) setState(() => _message = 'Check your email for a password reset link.');
     } catch (error) {
-      if (mounted) setState(() => _message = 'Account creation failed: $error');
+      if (mounted) setState(() => _message = '$error');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -198,7 +224,10 @@ class _TeacherGateScreenState extends State<TeacherGateScreen> {
                         OutlinedButton.icon(
                             onPressed: _busy ? null : _signUp,
                             icon: const Icon(Icons.person_add_alt),
-                            label: const Text('Create Account')),
+                            label: const Text('Create Teacher Account')),
+                        TextButton(
+                            onPressed: _busy ? null : _forgotPassword,
+                            child: const Text('Forgot Password')),
                       ]),
                     ],
                     if (!_checking && _needsProfile) ...[
@@ -277,7 +306,10 @@ class _TeacherDialogState extends State<_TeacherDialog> {
       });
       if (mounted) Navigator.pop(context, teacher);
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) {
+        setState(() => _error =
+            error is PostgrestException ? error.message : error.toString());
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }

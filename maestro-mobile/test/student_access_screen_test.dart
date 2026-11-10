@@ -16,11 +16,17 @@ class _AccessFixture extends StudentPortalService {
   int? lastStudentId;
   String? lastEmail;
   bool failInvitation = false;
+  String? studentEmail;
 
   @override
   Future<Map<String, dynamic>> loadAccess(int studentAppId) async {
     loadCalls++;
-    return {'access': null, 'invitations': <dynamic>[], 'pieces': <dynamic>[]};
+    return {
+      'studentEmail': studentEmail,
+      'access': null,
+      'invitations': <dynamic>[],
+      'pieces': <dynamic>[]
+    };
   }
 
   @override
@@ -89,7 +95,7 @@ void main() {
     await tester.pump();
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.text('Invitation ready'), findsOneWidget);
+    expect(find.text('Invitation sent'), findsOneWidget);
     expect(find.text('invite-123'), findsOneWidget);
 
     await tester.tap(find.text('Copy token'));
@@ -126,5 +132,41 @@ void main() {
             .onPressed,
         isNotNull);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('saved student email is offered without replacing edits',
+      (tester) async {
+    service.studentEmail = 'saved@maestro.example';
+    await showAccess(tester);
+    expect(find.text('saved@maestro.example'), findsOneWidget);
+    await tester.enterText(
+        find.byType(TextField).first, 'edited@maestro.example');
+    service.studentEmail = 'changed@maestro.example';
+    await tester.tap(find.text('Create invitation'));
+    await tester.pump();
+    expect(service.lastEmail, 'edited@maestro.example');
+    await tester.runAsync(() async {
+      service.invitation.complete({'token': 'invite-123'});
+      await Future<void>.delayed(Duration.zero);
+    });
+    await tester.pump();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+    expect(find.text('edited@maestro.example'), findsOneWidget);
+  });
+
+  testWidgets('switching students loads only the newly selected email',
+      (tester) async {
+    service.studentEmail = 'first@maestro.example';
+    await showAccess(tester);
+    await tester.enterText(find.byType(TextField).first, 'manual@example.test');
+    service.studentEmail = 'second@maestro.example';
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body: StudentAccessScreen(studentId: 12, service: service))));
+    await tester.pumpAndSettle();
+    expect(find.text('second@maestro.example'), findsOneWidget);
+    expect(find.text('manual@example.test'), findsNothing);
   });
 }

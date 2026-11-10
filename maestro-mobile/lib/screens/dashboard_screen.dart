@@ -5,12 +5,12 @@ import '../models/payment.dart';
 import '../models/student.dart';
 import '../models/teacher.dart';
 import '../services/maestro_data_source.dart';
+import '../services/messaging_inbox.dart';
 import '../services/studio_metrics.dart';
-import '../theme/maestro_theme.dart';
 import '../widgets/async_state.dart';
 import '../widgets/maestro_card.dart';
-import '../widgets/section_header.dart';
 import '../widgets/status_badge.dart';
+import '../widgets/dashboard_layout.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({
@@ -21,6 +21,9 @@ class DashboardScreen extends StatefulWidget {
     required this.onOpenStudent,
     required this.onOpenCalendar,
     required this.onAddStudent,
+    required this.onOpenPayments,
+    required this.onOpenMessages,
+    this.inbox,
   });
 
   final MaestroDataSource api;
@@ -29,6 +32,9 @@ class DashboardScreen extends StatefulWidget {
   final ValueChanged<Student> onOpenStudent;
   final VoidCallback onOpenCalendar;
   final VoidCallback onAddStudent;
+  final VoidCallback onOpenPayments;
+  final VoidCallback onOpenMessages;
+  final MessagingInbox? inbox;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -49,6 +55,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       child: FutureBuilder<_DashboardData>(
         future: _future,
         builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const DashboardSkeleton();
+          }
           return AsyncState<_DashboardData>(
             snapshot: snapshot,
             builder: _content,
@@ -80,80 +89,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
       (total, payment) => total + payment.amount,
     );
 
-    return ListView(
-      children: [
-        SectionHeader(
-          title: 'Dashboard',
-          subtitle:
-              'Signed in as ${widget.teacher.displayName} - Teacher ID ${widget.teacher.id}',
-          trailing: Wrap(
-            spacing: 10,
-            children: [
-              ElevatedButton.icon(
-                onPressed: widget.onAddStudent,
-                icon: const Icon(Icons.add),
-                label: const Text('Add Student'),
-              ),
-              OutlinedButton.icon(
-                onPressed: widget.onOpenCalendar,
-                icon: const Icon(Icons.calendar_month),
-                label: const Text('Calendar'),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 18),
-        Wrap(
-          spacing: 14,
-          runSpacing: 14,
-          children: [
-            _StatCard(
-                label: 'Total Students', value: students.length.toString()),
-            _StatCard(
-                label: 'Lessons This Month',
-                value: monthLessons.length.toString()),
-            _StatCard(
-                label: 'Payments This Month',
-                value: monthPayments.length.toString()),
-            _StatCard(
-                label: 'Revenue This Month',
-                value: NumberFormat.simpleCurrency().format(totalRevenue)),
-          ],
-        ),
-        const SizedBox(height: 18),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final twoColumn = constraints.maxWidth >= 900;
-            final today = _TodayCard(
-                students: students, onOpenStudent: widget.onOpenStudent);
-            final reviews = _ReviewCard(
-                students: students, onOpenStudent: widget.onOpenStudent);
-            final paymentAttention = _PaymentAttentionCard(
-                students: students,
-                payments: payments,
-                onOpenStudent: widget.onOpenStudent);
-            if (twoColumn) {
-              return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: today),
-                    const SizedBox(width: 16),
-                    Expanded(child: reviews),
-                    const SizedBox(width: 16),
-                    Expanded(child: paymentAttention),
-                  ]);
-            }
-            return Column(
-              children: [
-                today,
-                const SizedBox(height: 16),
-                reviews,
-                const SizedBox(height: 16),
-                paymentAttention,
-              ],
-            );
-          },
-        ),
+    return DashboardLayout(
+      greeting: 'Welcome, ${widget.teacher.displayName}',
+      stats: [
+        DashboardStat(
+            'Total Students', '${students.length}', Icons.people_outline),
+        DashboardStat('Lessons This Month', '${monthLessons.length}',
+            Icons.event_note_outlined),
+        DashboardStat('Payments This Month', '${monthPayments.length}',
+            Icons.payments_outlined),
+        DashboardStat(
+            'Revenue This Month',
+            NumberFormat.simpleCurrency().format(totalRevenue),
+            Icons.trending_up),
+      ],
+      actions: [
+        DashboardAction(
+            'Add Student', Icons.person_add_alt_1, widget.onAddStudent),
+        DashboardAction('Schedule Lesson', Icons.event_available_outlined,
+            widget.onOpenCalendar),
+        DashboardAction(
+            'Record Payment', Icons.add_card_outlined, widget.onOpenPayments),
+        DashboardAction(
+            'Add Note', Icons.note_add_outlined, widget.onOpenStudents),
+        DashboardAction(
+            'Messages', Icons.chat_bubble_outline, widget.onOpenMessages),
+        const DashboardAction('Reports', Icons.bar_chart_outlined, null),
+      ],
+      sections: [
+        _TodayCard(students: students, onOpenStudent: widget.onOpenStudent),
+        _UpcomingCard(students: students, onOpenStudent: widget.onOpenStudent),
+        _ReviewCard(students: students, onOpenStudent: widget.onOpenStudent),
+        _PaymentAttentionCard(
+            students: students,
+            payments: payments,
+            onOpenStudent: widget.onOpenStudent),
+        _RecentMessagesCard(
+            inbox: widget.inbox, onOpenMessages: widget.onOpenMessages),
       ],
     );
   }
@@ -179,37 +151,8 @@ class _Page extends StatelessWidget {
   Widget build(BuildContext context) {
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.zero,
         child: child,
-      ),
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  const _StatCard({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 190,
-      child: MaestroCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: const TextStyle(color: MaestroColors.muted)),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -260,6 +203,85 @@ class _TodayCard extends StatelessWidget {
   }
 }
 
+class _UpcomingCard extends StatelessWidget {
+  const _UpcomingCard({required this.students, required this.onOpenStudent});
+  final List<Student> students;
+  final ValueChanged<Student> onOpenStudent;
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final upcoming = lessonsForStudents(students)
+        .where((lesson) {
+          final date = lesson.course.date;
+          return date != null &&
+              date.isAfter(now) &&
+              lesson.course.status == 'NOTHING';
+        })
+        .take(5)
+        .toList();
+    return MaestroCard(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Upcoming Lessons',
+          style: Theme.of(context)
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.w800)),
+      const SizedBox(height: 10),
+      if (upcoming.isEmpty)
+        const Text('No upcoming lessons.')
+      else
+        for (final lesson in upcoming)
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(lesson.student.displayName),
+            subtitle: Text(
+                '${DateFormat.yMMMd().format(lesson.course.date!)} · ${lesson.course.title}'),
+            onTap: () => onOpenStudent(lesson.student),
+          ),
+    ]));
+  }
+}
+
+class _RecentMessagesCard extends StatelessWidget {
+  const _RecentMessagesCard(
+      {required this.inbox, required this.onOpenMessages});
+  final MessagingInbox? inbox;
+  final VoidCallback onOpenMessages;
+
+  @override
+  Widget build(BuildContext context) => inbox == null
+      ? _card(context)
+      : AnimatedBuilder(
+          animation: inbox!, builder: (context, _) => _card(context));
+
+  Widget _card(BuildContext context) => MaestroCard(
+          child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Recent Messages',
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w800)),
+          if (inbox != null) Text('${inbox!.unreadCount} unread'),
+          const SizedBox(height: 10),
+          if (inbox == null || inbox!.conversations.isEmpty)
+            const Text('No recent messages.')
+          else
+            for (final row in inbox!.conversations.take(3))
+              ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text('${row['name'] ?? 'Conversation'}'),
+                  subtitle: Text('${row['lastMessage'] ?? ''}',
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                  onTap: onOpenMessages),
+          TextButton(
+              onPressed: onOpenMessages, child: const Text('View messages')),
+        ],
+      ));
+}
+
 class _PaymentAttentionCard extends StatelessWidget {
   const _PaymentAttentionCard({
     required this.students,
@@ -276,7 +298,7 @@ class _PaymentAttentionCard extends StatelessWidget {
     final attention = [...students]..sort((a, b) =>
         paymentBalance(a, payments).compareTo(paymentBalance(b, payments)));
     final visible = attention
-        .where((student) => paymentBalance(student, payments) <= 0)
+        .where((student) => paymentBalance(student, payments) < 0)
         .take(6);
 
     return MaestroCard(

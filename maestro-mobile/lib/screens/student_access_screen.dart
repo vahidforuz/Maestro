@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
@@ -23,6 +22,8 @@ class _StudentAccessScreenState extends State<StudentAccessScreen> {
   late Future<Map<String, dynamic>> _future =
       _service.loadAccess(widget.studentId);
   final _email = TextEditingController();
+  bool _emailTouched = false;
+  bool _emailInitialized = false;
   bool _busy = false;
   String? _error;
 
@@ -54,6 +55,17 @@ class _StudentAccessScreenState extends State<StudentAccessScreen> {
     super.dispose();
   }
 
+  @override
+  void didUpdateWidget(covariant StudentAccessScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.studentId != widget.studentId) {
+      _email.clear();
+      _emailTouched = false;
+      _emailInitialized = false;
+      _future = _service.loadAccess(widget.studentId);
+    }
+  }
+
   void _refresh() {
     final next = _service.loadAccess(widget.studentId);
     setState(() {
@@ -73,7 +85,8 @@ class _StudentAccessScreenState extends State<StudentAccessScreen> {
     } catch (error) {
       if (mounted) {
         setState(() {
-          _error = error.toString();
+          _error =
+              error is PostgrestException ? error.message : error.toString();
         });
       }
     } finally {
@@ -98,17 +111,12 @@ class _StudentAccessScreenState extends State<StudentAccessScreen> {
       final result = await _service.invite(widget.studentId, invitedEmail);
       if (!mounted) return;
       final token = result['token'] as String;
-      final link = kIsWeb
-          ? Uri.base.replace(queryParameters: {
-              ...Uri.base.queryParameters,
-              'invite': token,
-            }, fragment: '').toString()
-          : null;
+      final link = result['link'] as String?;
       final invitation = link ?? token;
       await showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Invitation ready'),
+          title: const Text('Invitation sent'),
           content: SizedBox(
             width: 480,
             child: Column(
@@ -116,7 +124,7 @@ class _StudentAccessScreenState extends State<StudentAccessScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                      'Send this ${link == null ? 'token' : 'link'} to $invitedEmail. It expires in 7 days and works once.'),
+                      'Activation email sent to $invitedEmail. This ${link == null ? 'token' : 'link'} expires in 7 days and works once.'),
                   const SizedBox(height: 12),
                   SelectableText(invitation),
                 ]),
@@ -257,6 +265,13 @@ class _StudentAccessScreenState extends State<StudentAccessScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           final data = snapshot.data!;
+          if (!_emailInitialized &&
+              snapshot.connectionState == ConnectionState.done) {
+            _emailInitialized = true;
+            if (!_emailTouched) {
+              _email.text = (data['studentEmail'] as String?) ?? '';
+            }
+          }
           final access = data['access'] as Map<String, dynamic>?;
           final invitations = data['invitations'] as List<dynamic>;
           final pieces = data['pieces'] as List<dynamic>;
@@ -280,6 +295,7 @@ class _StudentAccessScreenState extends State<StudentAccessScreen> {
                   const SizedBox(height: 12),
                   TextField(
                       controller: _email,
+                      onChanged: (_) => _emailTouched = true,
                       keyboardType: TextInputType.emailAddress,
                       decoration: const InputDecoration(
                           labelText: 'Student email address')),

@@ -63,12 +63,20 @@ insert into public.teacher_students (teacher_id, student_id) values
   ('20000000-0000-0000-0000-000000000002', '30000000-0000-0000-0000-000000000015')
 on conflict (teacher_id, student_id) do nothing;
 
+-- Pat is the one-child finance isolation fixture. Ren exercises multi-child
+-- parent links without financial permission.
 insert into public.parent_students (parent_user_id, student_id, can_view_finances) values
   ('10000000-0000-0000-0000-000000000021', '30000000-0000-0000-0000-000000000011', true),
-  ('10000000-0000-0000-0000-000000000021', '30000000-0000-0000-0000-000000000012', true),
   ('10000000-0000-0000-0000-000000000022', '30000000-0000-0000-0000-000000000013', false),
   ('10000000-0000-0000-0000-000000000022', '30000000-0000-0000-0000-000000000014', false)
 on conflict (parent_user_id, student_id) do nothing;
+
+insert into public.parent_access(teacher_id, student_id, parent_user_id,
+  can_view_finances)
+select ts.teacher_id, ps.student_id, ps.parent_user_id, ps.can_view_finances
+from public.parent_students ps join public.teacher_students ts
+  on ts.student_id = ps.student_id
+on conflict (teacher_id, student_id, parent_user_id) do nothing;
 
 insert into public.projects (id, app_id, student_id, name, paid_course_count) values
   ('40000000-0000-0000-0000-000000000011', 101, '30000000-0000-0000-0000-000000000011', 'Piano foundations', 5),

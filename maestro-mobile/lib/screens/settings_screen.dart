@@ -13,6 +13,7 @@ class SettingsScreen extends StatefulWidget {
     required this.onTeacherChanged,
     required this.onSignOut,
     this.onSwitchStudent,
+    this.onSwitchParent,
   });
 
   final MaestroDataSource api;
@@ -20,6 +21,7 @@ class SettingsScreen extends StatefulWidget {
   final ValueChanged<Teacher> onTeacherChanged;
   final VoidCallback onSignOut;
   final VoidCallback? onSwitchStudent;
+  final VoidCallback? onSwitchParent;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -43,6 +45,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       TextEditingController(text: widget.teacher.mainInstrument);
   late final _otherInstruments =
       TextEditingController(text: widget.teacher.otherInstruments);
+  late final _profileImagePath =
+      TextEditingController(text: widget.teacher.profileImagePath);
   late final _duration =
       TextEditingController(text: '${widget.teacher.defaultLessonDuration}');
   late final _price =
@@ -63,6 +67,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       _postalCode,
       _mainInstrument,
       _otherInstruments,
+      _profileImagePath,
       _duration,
       _price,
       _currency,
@@ -90,6 +95,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onPressed: widget.onSwitchStudent,
                       icon: const Icon(Icons.music_note_outlined),
                       label: const Text('Student Portal'),
+                    ),
+                  if (widget.onSwitchParent != null)
+                    OutlinedButton.icon(
+                      onPressed: widget.onSwitchParent,
+                      icon: const Icon(Icons.family_restroom_outlined),
+                      label: const Text('Parent Portal'),
                     ),
                   OutlinedButton.icon(
                     onPressed: widget.onSignOut,
@@ -152,6 +163,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _field('Studio name', _studioName),
           _field('Email', _email),
           _field('Phone', _phone),
+          _field('Profile picture URL', _profileImagePath),
           _field('Address', _address),
           _field('City', _city),
           _field('Postal code', _postalCode),
@@ -241,7 +253,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         'defaultLessonDuration': duration,
         'defaultLessonPrice': price,
         'currency': _currency.text.trim(),
-        'profileImagePath': widget.teacher.profileImagePath,
+        'profileImagePath': _profileImagePath.text.trim(),
       });
       if (!mounted) return;
       setState(() => _editing = false);

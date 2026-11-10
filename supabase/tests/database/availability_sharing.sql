@@ -17,6 +17,15 @@ values (public.maestro_current_teacher_id(), '2026-10-26', 600, 660,
 select set_config('share.student', public.maestro_create_student(
   '{"firstName":"Private","familyName":"Student","courseDay":"MONDAY",
     "courseHour":"09:30","coursePrice":20}'::jsonb)::text, true);
+-- Student creation schedules the next Monday relative to today. Pin this
+-- fixture lesson to the historical week used by the shared-link assertions.
+reset role;
+update public.lessons set lesson_date = '2026-10-26'
+  where student_id = (select id from public.students
+    where app_id = current_setting('share.student')::bigint);
+set local role authenticated;
+select set_config('request.jwt.claim.sub',
+  '10000000-0000-0000-0000-000000000001', true);
 select set_config('share.token', public.maestro_create_availability_link(
   now() + interval '7 days', '2026-10-26', '2026-10-26')->>'token', true);
 select is(length(current_setting('share.token')), 64,

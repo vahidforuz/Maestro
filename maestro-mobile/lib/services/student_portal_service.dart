@@ -19,6 +19,13 @@ class StudentPortalService {
         params: {'p_token': token.trim()});
   }
 
+  Future<bool> checkInvitation(String token, String email) async {
+    return await client.rpc('maestro_check_student_invitation', params: {
+      'p_token': token,
+      'p_email': email,
+    }) as bool;
+  }
+
   Future<Map<String, dynamic>> loadAccess(int studentAppId) async {
     final teacher = await client
         .from('teachers')
@@ -27,7 +34,7 @@ class StudentPortalService {
         .single();
     final student = await client
         .from('students')
-        .select('id')
+        .select('id,email')
         .eq('app_id', studentAppId)
         .single();
     final teacherId = teacher['id'] as String;
@@ -47,6 +54,7 @@ class StudentPortalService {
     final pieces = await client.rpc('maestro_teacher_piece_progress',
         params: {'p_student_app_id': studentAppId});
     return {
+      'studentEmail': student['email'],
       'access': access == null ? null : Map<String, dynamic>.from(access),
       'invitations':
           invitations.map((value) => Map<String, dynamic>.from(value)).toList(),
@@ -57,11 +65,12 @@ class StudentPortalService {
   }
 
   Future<Map<String, dynamic>> invite(int studentAppId, String email) async {
-    final value = await client.rpc('maestro_invite_student', params: {
-      'p_student_app_id': studentAppId,
-      'p_email': email,
+    final response = await client.functions.invoke('send-invitation', body: {
+      'kind': 'student',
+      'studentId': studentAppId,
+      'email': email,
     });
-    return Map<String, dynamic>.from(value as Map);
+    return Map<String, dynamic>.from(response.data as Map);
   }
 
   Future<void> revokeInvitation(String id) async {

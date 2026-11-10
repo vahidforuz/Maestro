@@ -15,10 +15,15 @@ import 'message_image.dart';
 
 class MessagesScreen extends StatefulWidget {
   const MessagesScreen(
-      {super.key, required this.client, this.teacher = true, this.inbox});
+      {super.key,
+      required this.client,
+      this.teacher = true,
+      this.inbox,
+      this.allowNew = true});
   final SupabaseClient client;
   final bool teacher;
   final MessagingInbox? inbox;
+  final bool allowNew;
 
   @override
   State<MessagesScreen> createState() => _MessagesScreenState();
@@ -172,10 +177,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh'),
       ]),
-      floatingActionButton: FloatingActionButton.extended(
-          onPressed: _start,
-          icon: const Icon(Icons.edit_outlined),
-          label: const Text('New')),
+      floatingActionButton: widget.allowNew
+          ? FloatingActionButton.extended(
+              onPressed: _start,
+              icon: const Icon(Icons.edit_outlined),
+              label: const Text('New'))
+          : null,
       body: Column(children: [
         Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -328,9 +335,10 @@ class _ChatRoomState extends State<ChatRoom> with WidgetsBindingObserver {
   RealtimeChannel? attachmentChannel;
   String? lastReadMessageId;
   bool markingRead = false;
+  Map<String, Map<String, String>> participants = const {};
 
   String get draftKey =>
-      '${widget.service.userId}:${widget.teacherId}:${widget.studentId}';
+      '${widget.service.userId}:${conversationId ?? '${widget.teacherId}:${widget.studentId}'}';
 
   @override
   void initState() {
@@ -388,9 +396,16 @@ class _ChatRoomState extends State<ChatRoom> with WidgetsBindingObserver {
         throw StateError('Conversation access is no longer active.');
       }
       final rows = await widget.service.messages(id);
+      Map<String, Map<String, String>> names = const {};
+      try {
+        names = await widget.service.participants(id);
+      } catch (_) {
+        // Older local schemas still support the existing private chat.
+      }
       if (!mounted) return;
       setState(() {
         conversationId = id;
+        participants = names;
         messages.addAll(rows);
         hasOlder = rows.length == MessagingService.pageSize;
         loading = false;
@@ -500,7 +515,7 @@ class _ChatRoomState extends State<ChatRoom> with WidgetsBindingObserver {
 
   Future<void> _refreshRead() async {
     final id = conversationId;
-    if (id == null) return;
+    if (id == null || widget.instrument == 'group') return;
     try {
       final value = await widget.service.peerReadAt(id);
       if (mounted) setState(() => peerReadAt = value);
@@ -964,6 +979,23 @@ class _ChatRoomState extends State<ChatRoom> with WidgetsBindingObserver {
                                                 crossAxisAlignment:
                                                     CrossAxisAlignment.start,
                                                 children: [
+                                                  if ((widget.instrument ==
+                                                              'group' ||
+                                                          widget.instrument ==
+                                                              'teacher_parent') &&
+                                                      participants.containsKey(
+                                                          row['sender_id']))
+                                                    Padding(
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .only(
+                                                                bottom: 4),
+                                                        child: Text(
+                                                            '${participants[row['sender_id']]!['name']} · ${participants[row['sender_id']]!['role']}',
+                                                            style: Theme.of(
+                                                                    context)
+                                                                .textTheme
+                                                                .labelSmall)),
                                                   if ((row['body'] as String? ??
                                                           '')
                                                       .isNotEmpty)

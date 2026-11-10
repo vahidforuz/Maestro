@@ -16,6 +16,7 @@ abstract interface class MaestroDataSource {
   Future<Teacher> createTeacher(Map<String, dynamic> request);
   Future<Teacher> updateTeacher(int id, Map<String, dynamic> request);
   Future<Student> createStudent(Map<String, dynamic> request);
+  Future<Student> updateStudentInstrument(int studentId, String instrument);
   Future<Payment> createPayment(int studentId, Map<String, dynamic> request);
   Future<Student> addProject(int studentId, Map<String, dynamic> request);
   Future<Student> updateProject(

@@ -574,6 +574,16 @@ class SupabaseMaestroDataSource
   }
 
   @override
+  Future<Student> updateStudentInstrument(
+      int studentId, String instrument) async {
+    await _client.rpc('maestro_update_student_instrument', params: {
+      'p_student_app_id': studentId,
+      'p_instrument': instrument,
+    });
+    return fetchStudent(studentId);
+  }
+
+  @override
   Future<List<Payment>> fetchPayments() async {
     await _myTeacherRow();
     final rows = await _client

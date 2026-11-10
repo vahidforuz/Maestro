@@ -14,6 +14,8 @@ select ok((select relrowsecurity from pg_class
   'date exceptions use RLS');
 select is((select timezone from public.teachers where user_id = auth.uid()),
   'America/Toronto', 'teacher has an IANA timezone');
+select set_config('calendar.base_rule_count',
+  (select count(*)::text from public.teacher_availability_rules), true);
 
 insert into public.teacher_availability_rules
   (teacher_id, weekday, start_minute, end_minute, kind, effective_from)
@@ -24,13 +26,19 @@ insert into public.teacher_availability_exceptions
 values (public.maestro_current_teacher_id(), '2026-10-26', 0, 1440,
   'unavailable');
 select is((select count(*)::integer from public.teacher_availability_rules),
-  1, 'teacher can create and read a recurring rule');
+  current_setting('calendar.base_rule_count')::integer + 1,
+  'teacher can create and read a recurring rule');
 select is((select count(*)::integer from public.teacher_availability_exceptions),
   1, 'teacher can block a whole date');
 
+select set_config('calendar.base_target_count',
+  (select count(*)::text from public.teacher_availability_rules
+    where weekday in (2,3)), true);
 select public.maestro_copy_availability_day('2026-10-26', array[2,3]);
 select is((select count(*)::integer from public.teacher_availability_rules
-  where weekday in (2,3)), 2, 'copy writes two target weekdays');
+  where weekday in (2,3)),
+  current_setting('calendar.base_target_count')::integer + 2,
+  'copy writes two target weekdays');
 select public.maestro_copy_availability_day('2026-10-26', array[2]);
 select is((select count(*)::integer from public.teacher_availability_rules
   where weekday = 2 and effective_until is null), 1,

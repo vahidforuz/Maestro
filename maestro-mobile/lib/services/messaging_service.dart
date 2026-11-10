@@ -62,6 +62,27 @@ class MessagingService {
         'p_student_id': studentId,
       }) as String;
 
+  Future<String> openParent(
+          int studentAppId, List<String> parentUserIds, bool group) async =>
+      await client.rpc('maestro_open_parent_conversation', params: {
+        'p_student_app_id': studentAppId,
+        'p_parent_user_ids': parentUserIds,
+        'p_group': group,
+      }) as String;
+
+  Future<Map<String, Map<String, String>>> participants(
+      String conversationId) async {
+    final rows = _rows(await client.rpc('maestro_conversation_participants',
+        params: {'p_conversation_id': conversationId}));
+    return {
+      for (final row in rows)
+        row['id'] as String: {
+          'name': row['name'] as String,
+          'role': row['role'] as String,
+        }
+    };
+  }
+
   Future<bool> canMessage(String conversationId) async =>
       await client.rpc('maestro_can_message', params: {
         'p_conversation_id': conversationId,

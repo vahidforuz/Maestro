@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/student_portal_service.dart';
 import 'student_access_screen.dart';
+import 'parent_management_screen.dart';
+import 'students_screen.dart';
 
 import '../models/course_note.dart';
 import '../models/course_filter.dart';
@@ -43,7 +45,13 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   DateTime _courseMonth = DateTime(DateTime.now().year, DateTime.now().month);
   _ProfileData? _profileData;
 
-  static const _tabs = ['Courses', 'Pieces', 'Payment', 'Student Access'];
+  static const _tabs = [
+    'Courses',
+    'Pieces',
+    'Payment',
+    'Student Access',
+    'Parents / Guardians'
+  ];
 
   @override
   void initState() {
@@ -93,7 +101,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _Header(student: student, onBack: widget.onBack),
+        _Header(
+          student: student,
+          onBack: widget.onBack,
+          onEditInstrument: () => _editInstrument(student),
+        ),
         const SizedBox(height: 14),
         Wrap(
           spacing: 8,
@@ -160,6 +172,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
               _selectedTab == 3
                   ? StudentAccessScreen(studentId: student.id)
                   : const SizedBox.shrink(),
+              _selectedTab == 4
+                  ? ParentManagementScreen(studentId: student.id)
+                  : const SizedBox.shrink(),
             ],
           ),
         ),
@@ -188,6 +203,17 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     setState(() {
       _profileData = null;
       _future = _load();
+    });
+  }
+
+  Future<void> _editInstrument(Student student) async {
+    final value = await showDialog<String>(
+      context: context,
+      builder: (context) => _InstrumentDialog(instrument: student.instrument),
+    );
+    if (value == null || value == student.instrument) return;
+    await _run(() async {
+      await widget.api.updateStudentInstrument(student.id, value);
     });
   }
 
@@ -474,25 +500,45 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.student, required this.onBack});
+  const _Header({
+    required this.student,
+    required this.onBack,
+    required this.onEditInstrument,
+  });
 
   final Student student;
   final VoidCallback onBack;
+  final VoidCallback onEditInstrument;
 
   @override
   Widget build(BuildContext context) {
     return MaestroCard(
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 32,
-            backgroundColor: MaestroColors.subtleBlue,
-            foregroundColor: MaestroColors.primary,
-            child: Text(
-              _initials(student),
-              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+          Stack(clipBehavior: Clip.none, children: [
+            CircleAvatar(
+              radius: 32,
+              backgroundColor: MaestroColors.subtleBlue,
+              foregroundColor: MaestroColors.primary,
+              child: Text(
+                _initials(student),
+                style:
+                    const TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+              ),
             ),
-          ),
+            Positioned(
+              right: -4,
+              bottom: -4,
+              child: IconButton.filledTonal(
+                tooltip: 'Edit instrument',
+                onPressed: onEditInstrument,
+                icon: const Icon(Icons.edit_outlined, size: 16),
+                constraints:
+                    const BoxConstraints.tightFor(width: 30, height: 30),
+                padding: EdgeInsets.zero,
+              ),
+            ),
+          ]),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
@@ -538,6 +584,79 @@ class _Header extends StatelessWidget {
         first.isEmpty ? '' : first.substring(0, 1).toUpperCase();
     final lastInitial = last.isEmpty ? '' : last.substring(0, 1).toUpperCase();
     return '$firstInitial$lastInitial';
+  }
+}
+
+class _InstrumentDialog extends StatefulWidget {
+  const _InstrumentDialog({required this.instrument});
+
+  final String? instrument;
+
+  @override
+  State<_InstrumentDialog> createState() => _InstrumentDialogState();
+}
+
+class _InstrumentDialogState extends State<_InstrumentDialog> {
+  late final _custom = TextEditingController();
+  late String _choice;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final saved = widget.instrument?.trim() ?? '';
+    _choice = studentInstrumentOptions.contains(saved) ? saved : 'OTHER';
+    if (_choice == 'OTHER') _custom.text = saved;
+  }
+
+  @override
+  void dispose() {
+    _custom.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Edit instrument'),
+        content: SizedBox(
+          width: 420,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            DropdownButtonFormField<String>(
+              initialValue: _choice,
+              decoration: const InputDecoration(labelText: 'Instrument'),
+              items: studentInstrumentOptions
+                  .map((value) =>
+                      DropdownMenuItem(value: value, child: Text(value)))
+                  .toList(),
+              onChanged: (value) => setState(() => _choice = value ?? _choice),
+            ),
+            if (_choice == 'OTHER') ...[
+              const SizedBox(height: 10),
+              TextField(
+                  controller: _custom,
+                  decoration:
+                      const InputDecoration(labelText: 'Custom instrument')),
+            ],
+            if (_error != null)
+              Text(_error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ]),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          ElevatedButton(onPressed: _save, child: const Text('Save')),
+        ],
+      );
+
+  void _save() {
+    final value = _choice == 'OTHER' ? _custom.text.trim() : _choice;
+    if (value.isEmpty) {
+      setState(() => _error = 'Enter a custom instrument.');
+      return;
+    }
+    Navigator.pop(context, value);
   }
 }
 
@@ -1730,6 +1849,23 @@ class _CourseDialogState extends State<_CourseDialog> {
     'MOVED'
   ];
 
+  Future<void> _pickTime() async {
+    final parts = _hour.text.split(':');
+    final selected = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(
+          hour: int.tryParse(parts.first) ?? 16,
+          minute: parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0),
+      builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+          child: child!),
+    );
+    if (selected != null && mounted) {
+      setState(() => _hour.text =
+          '${selected.hour.toString().padLeft(2, '0')}:${selected.minute.toString().padLeft(2, '0')}');
+    }
+  }
+
   @override
   void dispose() {
     _date.dispose();
@@ -1767,9 +1903,13 @@ class _CourseDialogState extends State<_CourseDialog> {
                     const InputDecoration(labelText: 'Date (yyyy-MM-dd)'),
               ),
               const SizedBox(height: 10),
-              TextField(
-                  controller: _hour,
-                  decoration: const InputDecoration(labelText: 'Start time')),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Start time'),
+                subtitle: Text(_hour.text.isEmpty ? 'No time' : _hour.text),
+                trailing: const Icon(Icons.access_time),
+                onTap: _pickTime,
+              ),
               const SizedBox(height: 10),
               DropdownButtonFormField<int>(
                 initialValue: _duration,

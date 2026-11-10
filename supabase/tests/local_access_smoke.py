@@ -20,7 +20,7 @@ EXPECTED = {
     "ben.teacher@maestro.example": ({13, 14, 15}, {202}),
     "aria.student@maestro.example": (set(), set()),
     "nora.student@maestro.example": (set(), set()),
-    "pat.parent@maestro.example": ({11, 12}, {201}),
+    "pat.parent@maestro.example": ({11}, {201}),
     "ren.parent@maestro.example": ({13, 14}, set()),
 }
 
@@ -107,6 +107,7 @@ def main() -> int:
         print(f"PASS {email}: {len(students)} students, {len(payments)} payments")
     finance_path = "/rest/v1/rpc/get_student_finances"
     aria_id = "30000000-0000-0000-0000-000000000011"
+    leo_id = "30000000-0000-0000-0000-000000000012"
     nora_id = "30000000-0000-0000-0000-000000000013"
     for email in ("ada.teacher@maestro.example", "pat.parent@maestro.example"):
         values = request(url, key, finance_path, tokens[email],
@@ -115,6 +116,8 @@ def main() -> int:
             raise AssertionError(f"{email} received wrong finance values")
     expect_denied(url, key, finance_path, tokens["ben.teacher@maestro.example"],
                   body={"p_student_id": aria_id})
+    expect_denied(url, key, finance_path, tokens["pat.parent@maestro.example"],
+                  body={"p_student_id": leo_id})
     expect_denied(url, key, finance_path, tokens["aria.student@maestro.example"],
                   body={"p_student_id": aria_id})
     expect_denied(url, key, finance_path, tokens["ren.parent@maestro.example"],
@@ -124,6 +127,28 @@ def main() -> int:
     expect_denied(url, key, "/rest/v1/projects?select=paid_course_count",
                   tokens["ren.parent@maestro.example"])
     print("PASS finance access: authorized RPC only; private columns hidden")
+    pat_portal = request(url, key, "/rest/v1/rpc/maestro_parent_portal_data",
+                         tokens["pat.parent@maestro.example"], body={})
+    ren_portal = request(url, key, "/rest/v1/rpc/maestro_parent_portal_data",
+                         tokens["ren.parent@maestro.example"], body={})
+    pat_students = {row["studentId"] for row in pat_portal}
+    ren_students = {row["studentId"] for row in ren_portal}
+    if pat_students != {aria_id} or ren_students != {
+        "30000000-0000-0000-0000-000000000013",
+        "30000000-0000-0000-0000-000000000014",
+    }:
+        raise AssertionError("Parent portal returned another parent's student")
+    if sum(len(row["payments"]) for row in pat_portal) != 1:
+        raise AssertionError("Pat received an unexpected payment history")
+    leo_lessons = request(url, key,
+                          f"/rest/v1/lessons?select=id,price&student_id=eq.{leo_id}",
+                          tokens["pat.parent@maestro.example"])
+    if leo_lessons:
+        raise AssertionError("Pat can retrieve Leo's lesson fees directly")
+    if any(row["balance"] is not None or row["fees"] or row["payments"]
+           for row in ren_portal):
+        raise AssertionError("Ren received finances without permission")
+    print("PASS parent portal RPC: only active linked students and permitted finances")
     for email in ("aria.student@maestro.example", "pat.parent@maestro.example"):
         expect_denied(url, key, "/rest/v1/rpc/register_teacher", tokens[email],
                       body={"p_first_name": "Wrong", "p_last_name": "Role"},

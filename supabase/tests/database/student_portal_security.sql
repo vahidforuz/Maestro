@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(6);
+select plan(7);
 
 select ok((select relrowsecurity from pg_class
   where oid = 'public.student_portal_access'::regclass),
@@ -27,6 +27,8 @@ select set_config('maestro.test.invitation',
 select set_config('request.jwt.claim.sub',
   '10000000-0000-0000-0000-000000000011', true);
 select public.maestro_accept_student_invitation(current_setting('maestro.test.invitation'));
+select is((select role from public.profiles where id = auth.uid()),
+  'student', 'accepted invitation assigns only the student role');
 select throws_ok(
   'select public.maestro_accept_student_invitation(current_setting(''maestro.test.invitation''))',
   '42501', 'Invitation is invalid or expired', 'accepted token cannot be reused');

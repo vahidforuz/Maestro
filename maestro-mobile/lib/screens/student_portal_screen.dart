@@ -3,8 +3,12 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/student_portal_service.dart';
+import '../services/messaging_inbox.dart';
+import '../services/messaging_service.dart';
 import 'messages_screen.dart';
 import '../widgets/maestro_card.dart';
+import '../widgets/maestro_shell.dart';
+import '../widgets/dashboard_layout.dart';
 
 class StudentPortalScreen extends StatefulWidget {
   const StudentPortalScreen(
@@ -12,6 +16,7 @@ class StudentPortalScreen extends StatefulWidget {
       required this.client,
       required this.onSignOut,
       required this.onSwitchTeacher,
+      this.onSwitchParent,
       this.service,
       this.canSwitchTeacher = false});
 
@@ -19,6 +24,7 @@ class StudentPortalScreen extends StatefulWidget {
   final StudentPortalService? service;
   final VoidCallback onSignOut;
   final VoidCallback onSwitchTeacher;
+  final VoidCallback? onSwitchParent;
   final bool canSwitchTeacher;
 
   @override
@@ -32,6 +38,9 @@ class _StudentPortalScreenState extends State<StudentPortalScreen>
   late Future<List<Map<String, dynamic>>> _future = _service.loadPortals();
   String? _selectedTeacher;
   int _section = 0;
+  final PageStorageBucket _pageStorage = PageStorageBucket();
+  late final MessagingInbox _inbox =
+      MessagingInbox(MessagingService(widget.client));
   static const _titles = [
     'Dashboard',
     'My Courses',
@@ -42,26 +51,18 @@ class _StudentPortalScreenState extends State<StudentPortalScreen>
     'Messages',
     'My Profile'
   ];
-  static const _icons = [
-    Icons.dashboard_outlined,
-    Icons.calendar_month_outlined,
-    Icons.notes_outlined,
-    Icons.rate_review_outlined,
-    Icons.music_note_outlined,
-    Icons.payments_outlined,
-    Icons.chat_bubble_outline,
-    Icons.person_outline
-  ];
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (widget.client.auth.currentUser != null) _inbox.start();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _inbox.dispose();
     super.dispose();
   }
 
@@ -125,8 +126,7 @@ class _StudentPortalScreenState extends State<StudentPortalScreen>
           ])));
         }
         if (!snapshot.hasData) {
-          return const Scaffold(
-              body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(body: SafeArea(child: DashboardSkeleton()));
         }
         final portals = snapshot.data!;
         if (portals.isEmpty) {
@@ -143,82 +143,106 @@ class _StudentPortalScreenState extends State<StudentPortalScreen>
         final portal = portals.firstWhere(
             (item) => item['teacherId'] == _selectedTeacher,
             orElse: () => portals.first);
-        final wide = MediaQuery.sizeOf(context).width >= 850;
         final body = _section == 6
-            ? MessagesScreen(client: widget.client, teacher: false)
-            : RefreshIndicator(
-                onRefresh: () async {
-                  _refresh();
-                  await _future;
-                },
-                child: ListView(padding: const EdgeInsets.all(20), children: [
-                  Row(children: [
-                    Expanded(
-                        child: Text(_titles[_section],
-                            style: Theme.of(context).textTheme.headlineSmall)),
-                    IconButton(
-                        onPressed: _refresh,
-                        tooltip: 'Refresh',
-                        icon: const Icon(Icons.refresh)),
-                  ]),
-                  if (portals.length > 1)
-                    DropdownButton<String>(
-                        value: portal['teacherId'] as String,
-                        items: [
-                          for (final item in portals)
-                            DropdownMenuItem(
-                                value: item['teacherId'] as String,
-                                child: Text(item['teacherName'] as String))
-                        ],
-                        onChanged: (value) =>
-                            setState(() => _selectedTeacher = value)),
-                  const SizedBox(height: 14),
-                  _content(portal),
-                ]));
-        return Scaffold(
-          drawer: wide
-              ? null
-              : Drawer(
-                  child: SafeArea(
-                      child: ListView(children: [
-                  const ListTile(title: Text('Student Portal')),
-                  for (var i = 0; i < _titles.length; i++)
-                    ListTile(
-                        selected: _section == i,
-                        leading: Icon(_icons[i]),
-                        title: Text(_titles[i]),
-                        onTap: () {
-                          Navigator.pop(context);
-                          setState(() => _section = i);
-                        }),
-                ]))),
-          appBar: AppBar(title: const Text('Maestro · Student'), actions: [
-            if (widget.canSwitchTeacher)
-              IconButton(
-                  onPressed: widget.onSwitchTeacher,
-                  tooltip: 'Teacher Portal',
-                  icon: const Icon(Icons.school_outlined)),
-            IconButton(
-                onPressed: widget.onSignOut,
-                tooltip: 'Sign out',
-                icon: const Icon(Icons.logout)),
-          ]),
-          body: wide
-              ? Row(children: [
-                  NavigationRail(
-                      selectedIndex: _section,
-                      onDestinationSelected: (value) =>
-                          setState(() => _section = value),
-                      labelType: NavigationRailLabelType.all,
-                      destinations: [
-                        for (var i = 0; i < _titles.length; i++)
-                          NavigationRailDestination(
-                              icon: Icon(_icons[i]), label: Text(_titles[i]))
-                      ]),
-                  Expanded(child: body),
-                ])
-              : body,
-        );
+            ? MessagesScreen(
+                client: widget.client, teacher: false, inbox: _inbox)
+            : _section == 0
+                ? _content(portal)
+                : RefreshIndicator(
+                    onRefresh: () async {
+                      _refresh();
+                      await _future;
+                    },
+                    child: ListView(
+                        key: PageStorageKey('student-section-$_section'),
+                        padding: const EdgeInsets.all(20),
+                        children: [
+                          Row(children: [
+                            Expanded(
+                                child: Text(
+                                    _section == 8
+                                        ? 'Calendar'
+                                        : _titles[_section],
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .headlineSmall)),
+                            IconButton(
+                                onPressed: _refresh,
+                                tooltip: 'Refresh',
+                                icon: const Icon(Icons.refresh)),
+                          ]),
+                          if (portals.length > 1)
+                            DropdownButton<String>(
+                                value: portal['teacherId'] as String,
+                                items: [
+                                  for (final item in portals)
+                                    DropdownMenuItem(
+                                        value: item['teacherId'] as String,
+                                        child:
+                                            Text(item['teacherName'] as String))
+                                ],
+                                onChanged: (value) =>
+                                    setState(() => _selectedTeacher = value)),
+                          const SizedBox(height: 14),
+                          _content(portal),
+                        ]));
+        return AnimatedBuilder(
+            animation: _inbox,
+            builder: (context, _) => MaestroShell(
+                  title: _section == 0
+                      ? 'Maestro'
+                      : _section == 8
+                          ? 'Calendar'
+                          : _titles[_section],
+                  userName: '${portal['studentName']}',
+                  body: PageStorage(bucket: _pageStorage, child: body),
+                  selectedIndex: _section == 6
+                      ? 3
+                      : _section == 1
+                          ? 1
+                          : _section == 8
+                              ? 2
+                              : _section == 0
+                                  ? 0
+                                  : 4,
+                  unreadCount: _inbox.unreadCount,
+                  onProfile: () => setState(() => _section = 7),
+                  onSettings: () => setState(() => _section = 7),
+                  onSignOut: widget.onSignOut,
+                  destinations: [
+                    MaestroDestination('Home', Icons.home_outlined,
+                        () => setState(() => _section = 0)),
+                    MaestroDestination('Lessons', Icons.menu_book_outlined,
+                        () => setState(() => _section = 1)),
+                    MaestroDestination(
+                        'Calendar',
+                        Icons.calendar_month_outlined,
+                        () => setState(() => _section = 8)),
+                    MaestroDestination('Messages', Icons.chat_bubble_outline,
+                        () => setState(() => _section = 6),
+                        badge: _inbox.unreadCount),
+                  ],
+                  more: [
+                    MaestroDestination('Lesson Notes', Icons.notes_outlined,
+                        () => setState(() => _section = 2)),
+                    MaestroDestination('My Reviews', Icons.rate_review_outlined,
+                        () => setState(() => _section = 3)),
+                    MaestroDestination('My Pieces', Icons.music_note_outlined,
+                        () => setState(() => _section = 4)),
+                    if (_allowed(portal, 'viewPayments') ||
+                        _allowed(portal, 'viewBalance'))
+                      MaestroDestination('Payments', Icons.payments_outlined,
+                          () => setState(() => _section = 5)),
+                    if (widget.canSwitchTeacher)
+                      MaestroDestination('Teacher Portal',
+                          Icons.school_outlined, widget.onSwitchTeacher),
+                    if (widget.onSwitchParent != null)
+                      MaestroDestination(
+                          'Parent Portal',
+                          Icons.family_restroom_outlined,
+                          widget.onSwitchParent!),
+                  ],
+                ));
       });
 
   Widget _content(Map<String, dynamic> data) {
@@ -241,46 +265,113 @@ class _StudentPortalScreenState extends State<StudentPortalScreen>
         return date != null &&
             !date.isBefore(DateTime(today.year, today.month, today.day)) &&
             course['status'] == 'NOTHING';
-      }).toList();
-      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Text('Welcome, ${data['studentName']}',
-            style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 14),
-        _card(
-            'Next lesson',
-            _allowed(data, 'viewCourses') && next.isNotEmpty
-                ? '${next.first['title']} · ${_dateText(next.first['date'])} ${next.first['hour'] ?? ''}'
-                : 'No upcoming lesson to show'),
-        _card(
-            'Upcoming reviews',
-            _allowed(data, 'viewReviews')
-                ? '${reviewNotes.where((n) => _date(n['reviewDate'])?.isAfter(today) == true).length} scheduled'
-                : 'Not shared'),
-        _card(
-            'Recently shared notes',
-            _allowed(data, 'viewNotes')
-                ? (sharedNotes.isEmpty
-                    ? 'No shared notes yet'
-                    : sharedNotes
-                        .take(3)
-                        .map((n) => '${n['piece'] ?? ''} ${n['comment'] ?? ''}')
-                        .join('\n'))
-                : 'Not shared'),
-        _card(
-            'Current pieces',
-            _allowed(data, 'viewPieces')
-                ? (pieces.isEmpty
-                    ? 'No pieces yet'
-                    : pieces.take(3).map((p) => p['title']).join(', '))
-                : 'Not shared'),
-        if (_allowed(data, 'viewPayments') || _allowed(data, 'viewBalance'))
+      }).toList()
+        ..sort((a, b) => '${a['date']} ${a['hour'] ?? ''}'
+            .compareTo('${b['date']} ${b['hour'] ?? ''}'));
+      return DashboardLayout(
+        greeting: 'Welcome, ${data['studentName']}',
+        stats: [
+          DashboardStat(
+              'Upcoming Lessons',
+              _allowed(data, 'viewCourses') ? '${next.length}' : '—',
+              Icons.event_note_outlined),
+          DashboardStat(
+              'Homework',
+              _allowed(data, 'viewCourses')
+                  ? '${courses.where((c) => '${c['homework'] ?? ''}'.isNotEmpty).length}'
+                  : '—',
+              Icons.task_alt),
+          DashboardStat(
+              'Pieces in Progress',
+              _allowed(data, 'viewPieces')
+                  ? '${pieces.where((p) => p['status'] != 'COMPLETE').length}'
+                  : '—',
+              Icons.music_note_outlined),
+          DashboardStat(
+              'Scheduled Reviews',
+              _allowed(data, 'viewReviews')
+                  ? '${reviewNotes.where((n) => _date(n['reviewDate'])?.isAfter(today) == true).length}'
+                  : '—',
+              Icons.rate_review_outlined),
+        ],
+        actions: [
+          DashboardAction('My Lessons', Icons.menu_book_outlined,
+              () => setState(() => _section = 1)),
+          DashboardAction(
+              'Homework', Icons.task_alt, () => setState(() => _section = 1)),
+          DashboardAction(
+              'My Pieces',
+              Icons.music_note_outlined,
+              _allowed(data, 'viewPieces')
+                  ? () => setState(() => _section = 4)
+                  : null),
+          const DashboardAction(
+              'Practice Videos', Icons.video_library_outlined, null),
+          DashboardAction('Messages', Icons.chat_bubble_outline,
+              () => setState(() => _section = 6)),
+          DashboardAction('Calendar', Icons.calendar_month_outlined,
+              () => setState(() => _section = 8)),
+        ],
+        sections: [
           _card(
-              'Payments',
-              '${payments.length} recorded payments'
-                  '${data['balance'] == null ? '' : ' · ${_balanceText(data['balance'])}'}'),
-      ]);
+              'Next Lesson',
+              _allowed(data, 'viewCourses') && next.isNotEmpty
+                  ? '${next.first['title']} · ${_dateText(next.first['date'])} ${next.first['hour'] ?? ''}'
+                  : 'No upcoming lesson to show'),
+          _card(
+              "Teacher's Shared Notes",
+              _allowed(data, 'viewNotes')
+                  ? (sharedNotes.isEmpty
+                      ? 'No shared notes yet'
+                      : sharedNotes
+                          .take(3)
+                          .map((n) =>
+                              '${n['piece'] ?? ''} ${n['comment'] ?? ''}')
+                          .join('\n'))
+                  : 'Not shared'),
+          _card(
+              'Homework',
+              _allowed(data, 'viewCourses')
+                  ? (courses
+                          .where((c) => '${c['homework'] ?? ''}'.isNotEmpty)
+                          .map((c) => '${c['homework']}')
+                          .take(3)
+                          .join('\n')
+                          .isEmpty
+                      ? 'No homework assigned.'
+                      : courses
+                          .where((c) => '${c['homework'] ?? ''}'.isNotEmpty)
+                          .map((c) => '${c['homework']}')
+                          .take(3)
+                          .join('\n'))
+                  : 'Not shared'),
+          _card(
+              'Practice Progress',
+              _allowed(data, 'viewPieces')
+                  ? (pieces.isEmpty
+                      ? 'No pieces yet'
+                      : pieces
+                          .take(3)
+                          .map((p) =>
+                              '${p['title']} · ${_pieceStatus(p['status'])}')
+                          .join('\n'))
+                  : 'Not shared'),
+          AnimatedBuilder(
+            animation: _inbox,
+            builder: (context, _) => _card(
+              'Recent Messages',
+              _inbox.conversations.isEmpty
+                  ? '${_inbox.unreadCount} unread · No recent messages.'
+                  : '${_inbox.unreadCount} unread\n${_inbox.conversations.take(3).map((m) => '${m['name']}: ${m['lastMessage'] ?? ''}').join('\n')}',
+            ),
+          ),
+          if (_allowed(data, 'viewPayments') || _allowed(data, 'viewBalance'))
+            _card('Payments',
+                '${payments.length} recorded payments${data['balance'] == null ? '' : ' · ${_balanceText(data['balance'])}'}'),
+        ],
+      );
     }
-    if (_section == 1) {
+    if (_section == 1 || _section == 8) {
       return _allowed(data, 'viewCourses')
           ? _items(courses, (course) {
               final number = courses.indexOf(course) + 1;

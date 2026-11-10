@@ -77,18 +77,17 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Welcome, Aria'), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.menu));
+    expect(find.text('Quick actions'), findsOneWidget);
+    expect(find.text('Practice Videos'), findsOneWidget);
+    await tester.tap(find.text('More'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(ListTile, 'Lesson Notes'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Practice slowly'), findsOneWidget);
     expect(find.textContaining('private-review'), findsNothing);
 
-    await tester.tap(find.byIcon(Icons.menu));
+    await tester.tap(find.text('More'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ListTile, 'Payments'));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('has not enabled payment information'),
-        findsOneWidget);
+    expect(find.widgetWithText(ListTile, 'Payments'), findsNothing);
   });
 }

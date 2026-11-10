@@ -4,6 +4,7 @@ import 'package:maestro_mobile/models/payment.dart';
 import 'package:maestro_mobile/models/student.dart';
 import 'package:maestro_mobile/models/teacher.dart';
 import 'package:maestro_mobile/screens/maestro_app.dart';
+import 'package:maestro_mobile/screens/student_profile_screen.dart';
 import 'package:maestro_mobile/services/maestro_data_source.dart';
 import 'package:maestro_mobile/services/studio_metrics.dart';
 import 'package:maestro_mobile/services/teacher_auth.dart';
@@ -61,6 +62,28 @@ const student = {
 };
 
 void main() {
+  testWidgets('saved custom instrument is prefilled when editing a student',
+      (tester) async {
+    final api = _FakeDataSource(instrument: 'Oboe');
+    await tester.binding.setSurfaceSize(const Size(700, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+            body:
+                StudentProfileScreen(api: api, studentId: 11, onBack: () {}))));
+    await tester.pumpAndSettle();
+    expect(find.text('Oboe Student'), findsOneWidget);
+    await tester.tap(find.byTooltip('Edit instrument'));
+    await tester.pumpAndSettle();
+    expect(find.text('Oboe'), findsOneWidget);
+    await tester.enterText(
+        find.widgetWithText(TextField, 'Custom instrument'), 'Bassoon');
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+    expect(api.savedInstrument, 'Bassoon');
+    expect(find.text('Bassoon Student'), findsOneWidget);
+  });
+
   testWidgets('non-teacher account is blocked from teacher onboarding',
       (tester) async {
     await tester.binding.setSurfaceSize(const Size(420, 900));
@@ -92,6 +115,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(auth.hasSession, isTrue);
     expect(find.text('Dashboard'), findsWidgets);
+    expect(find.text('Total Students'), findsOneWidget);
+    expect(find.text('Quick actions'), findsOneWidget);
   });
 
   for (final viewport in [const Size(420, 900), const Size(1280, 900)]) {
@@ -148,6 +173,8 @@ void main() {
       await tester.tap(coursesTab);
       await tester.pumpAndSettle();
       expect(tester.widget<ChoiceChip>(coursesTab).selected, isTrue);
+      await tester.tap(find.text('Tous les cours'));
+      await tester.pumpAndSettle();
       expect(find.text('Course 1'), findsOneWidget);
       expect(api.fetchedStudent, isTrue);
       expect(api.fetchedStudentPayments, isTrue);
@@ -168,8 +195,10 @@ void main() {
 }
 
 class _FakeDataSource implements MaestroDataSource {
-  _FakeDataSource({this.emptyTeachers = false});
+  _FakeDataSource({this.emptyTeachers = false, this.instrument});
   final bool emptyTeachers;
+  final String? instrument;
+  String? savedInstrument;
   bool fetchedStudent = false;
   bool fetchedStudentPayments = false;
 
@@ -181,7 +210,17 @@ class _FakeDataSource implements MaestroDataSource {
   @override
   Future<Student> fetchStudent(int id) async {
     fetchedStudent = true;
-    return Student.fromJson(student);
+    return Student.fromJson({
+      ...student,
+      if (instrument != null || savedInstrument != null)
+        'instrument': savedInstrument ?? instrument,
+    });
+  }
+
+  @override
+  Future<Student> updateStudentInstrument(int studentId, String value) async {
+    savedInstrument = value;
+    return fetchStudent(studentId);
   }
 
   @override

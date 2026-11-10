@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 
 class MaestroColors {
-  static const background = Color(0xFFF6F7F9);
+  static const background = Color(0xFFF8FAFC);
   static const surface = Color(0xFFFFFFFF);
   static const sidebar = Color(0xFF111827);
   static const sidebarHover = Color(0xFF1F2937);
   static const primary = Color(0xFF2563EB);
   static const primaryHover = Color(0xFF1D4ED8);
   static const text = Color(0xFF111827);
-  static const muted = Color(0xFF6B7280);
-  static const border = Color(0xFFE5E7EB);
+  static const muted = Color(0xFF64748B);
+  static const border = Color(0xFFE2E8F0);
+  static const success = Color(0xFF16A34A);
+  static const warning = Color(0xFFF59E0B);
+  static const error = Color(0xFFDC2626);
   static const subtleBlue = Color(0xFFEAF1FF);
   static const successBg = Color(0xFFDCFCE7);
   static const successText = Color(0xFF166534);
@@ -28,6 +31,7 @@ class MaestroTheme {
         seedColor: MaestroColors.primary,
         primary: MaestroColors.primary,
         surface: MaestroColors.surface,
+        error: MaestroColors.error,
       ),
       scaffoldBackgroundColor: MaestroColors.background,
       fontFamily: 'Inter',
@@ -41,19 +45,36 @@ class MaestroTheme {
       ),
       cardTheme: CardThemeData(
         color: MaestroColors.surface,
-        elevation: 2,
+        elevation: 1,
         shadowColor: MaestroColors.text.withValues(alpha: 0.06),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(16),
           side: const BorderSide(color: MaestroColors.border),
         ),
         margin: EdgeInsets.zero,
+      ),
+      appBarTheme: const AppBarTheme(
+        backgroundColor: MaestroColors.surface,
+        foregroundColor: MaestroColors.text,
+        elevation: 0,
+        surfaceTintColor: MaestroColors.surface,
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: MaestroColors.surface,
+        indicatorColor: MaestroColors.subtleBlue,
+        labelTextStyle: WidgetStateProperty.all(
+            const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+      ),
+      navigationRailTheme: const NavigationRailThemeData(
+        backgroundColor: MaestroColors.surface,
+        indicatorColor: MaestroColors.subtleBlue,
+        minWidth: 84,
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: MaestroColors.surface,
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: MaestroColors.border),
         ),
       ),
@@ -62,7 +83,8 @@ class MaestroTheme {
           backgroundColor: MaestroColors.primary,
           foregroundColor: Colors.white,
           elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           textStyle: const TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
@@ -70,7 +92,8 @@ class MaestroTheme {
         style: OutlinedButton.styleFrom(
           foregroundColor: const Color(0xFF374151),
           side: const BorderSide(color: Color(0xFFD1D5DB)),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           textStyle: const TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
