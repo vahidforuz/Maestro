@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/student_portal_service.dart';
 import '../services/messaging_inbox.dart';
 import '../services/messaging_service.dart';
+import '../theme/maestro_theme.dart';
 import 'messages_screen.dart';
 import '../widgets/maestro_card.dart';
 import '../widgets/maestro_shell.dart';
@@ -183,6 +184,29 @@ class _StudentPortalScreenState extends State<StudentPortalScreen>
                                 ],
                                 onChanged: (value) =>
                                     setState(() => _selectedTeacher = value)),
+                          if (_section == 1 ||
+                              _section == 2 ||
+                              _section == 3 ||
+                              _section == 8)
+                            Wrap(spacing: 8, runSpacing: 8, children: [
+                              ChoiceChip(
+                                  label: const Text('My Lessons'),
+                                  selected: _section == 1,
+                                  onSelected: (_) =>
+                                      setState(() => _section = 1)),
+                              if (_allowed(portal, 'viewNotes'))
+                                ChoiceChip(
+                                    label: const Text('Lesson Notes'),
+                                    selected: _section == 2,
+                                    onSelected: (_) =>
+                                        setState(() => _section = 2)),
+                              if (_allowed(portal, 'viewReviews'))
+                                ChoiceChip(
+                                    label: const Text('My Reviews'),
+                                    selected: _section == 3,
+                                    onSelected: (_) =>
+                                        setState(() => _section = 3)),
+                            ]),
                           const SizedBox(height: 14),
                           _content(portal),
                         ]));
@@ -198,13 +222,33 @@ class _StudentPortalScreenState extends State<StudentPortalScreen>
                   body: PageStorage(bucket: _pageStorage, child: body),
                   selectedIndex: _section == 6
                       ? 3
-                      : _section == 1
+                      : _section == 1 ||
+                              _section == 2 ||
+                              _section == 3 ||
+                              _section == 4
                           ? 1
                           : _section == 8
                               ? 2
-                              : _section == 0
-                                  ? 0
-                                  : 4,
+                              : _section == 7
+                                  ? 4
+                                  : 0,
+                  shortcuts: [
+                    if (_allowed(portal, 'viewPayments') ||
+                        _allowed(portal, 'viewBalance'))
+                      MaestroShortcut(
+                          'Payments',
+                          Icons.payments_outlined,
+                          MaestroAccents.green,
+                          () => setState(() => _section = 5),
+                          selected: _section == 5),
+                    if (_allowed(portal, 'viewPieces'))
+                      MaestroShortcut(
+                          'Pieces / Projects',
+                          Icons.music_note_outlined,
+                          MaestroAccents.violet,
+                          () => setState(() => _section = 4),
+                          selected: _section == 4),
+                  ],
                   unreadCount: _inbox.unreadCount,
                   onProfile: () => setState(() => _section = 7),
                   onSettings: () => setState(() => _section = 7),
@@ -221,26 +265,6 @@ class _StudentPortalScreenState extends State<StudentPortalScreen>
                     MaestroDestination('Messages', Icons.chat_bubble_outline,
                         () => setState(() => _section = 6),
                         badge: _inbox.unreadCount),
-                  ],
-                  more: [
-                    MaestroDestination('Lesson Notes', Icons.notes_outlined,
-                        () => setState(() => _section = 2)),
-                    MaestroDestination('My Reviews', Icons.rate_review_outlined,
-                        () => setState(() => _section = 3)),
-                    MaestroDestination('My Pieces', Icons.music_note_outlined,
-                        () => setState(() => _section = 4)),
-                    if (_allowed(portal, 'viewPayments') ||
-                        _allowed(portal, 'viewBalance'))
-                      MaestroDestination('Payments', Icons.payments_outlined,
-                          () => setState(() => _section = 5)),
-                    if (widget.canSwitchTeacher)
-                      MaestroDestination('Teacher Portal',
-                          Icons.school_outlined, widget.onSwitchTeacher),
-                    if (widget.onSwitchParent != null)
-                      MaestroDestination(
-                          'Parent Portal',
-                          Icons.family_restroom_outlined,
-                          widget.onSwitchParent!),
                   ],
                 ));
       });
@@ -274,43 +298,53 @@ class _StudentPortalScreenState extends State<StudentPortalScreen>
           DashboardStat(
               'Upcoming Lessons',
               _allowed(data, 'viewCourses') ? '${next.length}' : '—',
-              Icons.event_note_outlined),
+              Icons.event_note_outlined,
+              accent: MaestroAccents.violet),
           DashboardStat(
               'Homework',
               _allowed(data, 'viewCourses')
                   ? '${courses.where((c) => '${c['homework'] ?? ''}'.isNotEmpty).length}'
                   : '—',
-              Icons.task_alt),
+              Icons.task_alt,
+              accent: MaestroAccents.orange),
           DashboardStat(
               'Pieces in Progress',
               _allowed(data, 'viewPieces')
                   ? '${pieces.where((p) => p['status'] != 'COMPLETE').length}'
                   : '—',
-              Icons.music_note_outlined),
+              Icons.music_note_outlined,
+              accent: MaestroAccents.cyan),
           DashboardStat(
               'Scheduled Reviews',
               _allowed(data, 'viewReviews')
                   ? '${reviewNotes.where((n) => _date(n['reviewDate'])?.isAfter(today) == true).length}'
                   : '—',
-              Icons.rate_review_outlined),
+              Icons.rate_review_outlined,
+              accent: MaestroAccents.violet),
         ],
         actions: [
           DashboardAction('My Lessons', Icons.menu_book_outlined,
-              () => setState(() => _section = 1)),
+              () => setState(() => _section = 1),
+              accent: MaestroAccents.violet),
           DashboardAction(
-              'Homework', Icons.task_alt, () => setState(() => _section = 1)),
+              'Homework', Icons.task_alt, () => setState(() => _section = 1),
+              accent: MaestroAccents.orange),
           DashboardAction(
               'My Pieces',
               Icons.music_note_outlined,
               _allowed(data, 'viewPieces')
                   ? () => setState(() => _section = 4)
-                  : null),
+                  : null,
+              accent: MaestroAccents.cyan),
           const DashboardAction(
-              'Practice Videos', Icons.video_library_outlined, null),
+              'Practice Videos', Icons.video_library_outlined, null,
+              accent: MaestroAccents.cyan),
           DashboardAction('Messages', Icons.chat_bubble_outline,
-              () => setState(() => _section = 6)),
+              () => setState(() => _section = 6),
+              accent: MaestroAccents.pink),
           DashboardAction('Calendar', Icons.calendar_month_outlined,
-              () => setState(() => _section = 8)),
+              () => setState(() => _section = 8),
+              accent: MaestroAccents.orange),
         ],
         sections: [
           _card(
@@ -491,6 +525,22 @@ class _StudentPortalScreenState extends State<StudentPortalScreen>
           },
           icon: const Icon(Icons.lock_outline),
           label: const Text('Reset password')),
+      if (widget.canSwitchTeacher) ...[
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: widget.onSwitchTeacher,
+          icon: const Icon(Icons.school_outlined),
+          label: const Text('Teacher Portal'),
+        ),
+      ],
+      if (widget.onSwitchParent != null) ...[
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: widget.onSwitchParent,
+          icon: const Icon(Icons.family_restroom_outlined),
+          label: const Text('Parent Portal'),
+        ),
+      ],
     ]);
   }
 
@@ -546,7 +596,10 @@ class _StudentPortalScreenState extends State<StudentPortalScreen>
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(title, style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
-        Text(body)
+        if (body.startsWith('No ') || body == 'Not shared')
+          DashboardEmptyState(body)
+        else
+          Text(body)
       ])));
 
   Widget _items(List<Map<String, dynamic>> items,

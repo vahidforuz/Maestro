@@ -56,6 +56,20 @@ class _PortalFixture extends StudentPortalService {
       ];
 }
 
+class _PaymentPortalFixture extends _PortalFixture {
+  _PaymentPortalFixture(super.client);
+
+  @override
+  Future<List<Map<String, dynamic>>> loadPortals() async {
+    final portals = await super.loadPortals();
+    portals.first['permissions'] = {
+      ...(portals.first['permissions'] as Map<String, dynamic>),
+      'viewPayments': true,
+    };
+    return portals;
+  }
+}
+
 void main() {
   testWidgets('mobile student navigation shows only shared note content',
       (tester) async {
@@ -79,9 +93,17 @@ void main() {
     expect(find.text('Welcome, Aria'), findsOneWidget);
     expect(find.text('Quick actions'), findsOneWidget);
     expect(find.text('Practice Videos'), findsOneWidget);
+    expect(find.byKey(const ValueKey('shortcut-Payments')), findsNothing);
     await tester.tap(find.text('More'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(ListTile, 'Lesson Notes'));
+    expect(find.byKey(const ValueKey('shortcut-Pieces / Projects')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('shortcut-Payments')), findsNothing);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Lessons'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Lesson Notes'));
     await tester.pumpAndSettle();
     expect(find.textContaining('Practice slowly'), findsOneWidget);
     expect(find.textContaining('private-review'), findsNothing);
@@ -89,5 +111,31 @@ void main() {
     await tester.tap(find.text('More'));
     await tester.pumpAndSettle();
     expect(find.widgetWithText(ListTile, 'Payments'), findsNothing);
+    expect(find.widgetWithText(ListTile, 'Lesson Notes'), findsNothing);
+  });
+
+  testWidgets('authorized student payment shortcut opens existing page',
+      (tester) async {
+    tester.view.physicalSize = const Size(420, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final client = SupabaseClient('https://example.invalid', 'test-key',
+        authOptions: const AuthClientOptions(autoRefreshToken: false));
+    addTearDown(client.dispose);
+    await tester.pumpWidget(MaterialApp(
+      home: StudentPortalScreen(
+        client: client,
+        service: _PaymentPortalFixture(client),
+        onSignOut: () {},
+        onSwitchTeacher: () {},
+      ),
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('More'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('shortcut-Payments')));
+    await tester.pumpAndSettle();
+    expect(find.text('Payments'), findsWidgets);
   });
 }

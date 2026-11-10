@@ -9,6 +9,7 @@ import '../services/messaging_service.dart';
 import '../services/messaging_inbox.dart';
 import '../services/teacher_auth.dart';
 import '../services/student_portal_service.dart';
+import '../theme/maestro_theme.dart';
 import '../widgets/maestro_shell.dart';
 import 'app_section.dart';
 import 'calendar_screen.dart';
@@ -46,6 +47,7 @@ class _MaestroAppState extends State<MaestroApp> {
   Teacher? _teacher;
   StreamSubscription<bool>? _authSubscription;
   MessagingInbox? _inbox;
+  String? _activeShortcut;
   final ValueNotifier<int> _emptyInbox = ValueNotifier<int>(0);
   final Map<AppSection, Widget> _pages = {};
 
@@ -73,6 +75,7 @@ class _MaestroAppState extends State<MaestroApp> {
       _teacher = null;
       _selectedStudent = null;
       _section = AppSection.dashboard;
+      _activeShortcut = null;
     });
   }
 
@@ -122,9 +125,28 @@ class _MaestroAppState extends State<MaestroApp> {
           AppSection.students => 1,
           AppSection.calendar => 2,
           AppSection.messages => 3,
-          AppSection.payments || AppSection.settings => 4,
+          AppSection.settings => 4,
           _ => 0,
         },
+        shortcuts: [
+          MaestroShortcut(
+              'Payments',
+              Icons.payments_outlined,
+              MaestroAccents.green,
+              () => _openShortcut('payments', AppSection.payments),
+              selected: _section == AppSection.payments),
+          MaestroShortcut('Availability', Icons.event_available_outlined,
+              MaestroAccents.orange, _openAvailability,
+              selected: _section == AppSection.calendar &&
+                  _activeShortcut == 'availability'),
+          MaestroShortcut(
+              'Pieces / Projects',
+              Icons.music_note_outlined,
+              MaestroAccents.violet,
+              () => _openShortcut('pieces', AppSection.students),
+              selected: _section == AppSection.students &&
+                  _activeShortcut == 'pieces'),
+        ],
         unreadCount: _inbox?.unreadCount ?? 0,
         onProfile: () => _selectSection(AppSection.settings),
         onSettings: () => _selectSection(AppSection.settings),
@@ -139,14 +161,6 @@ class _MaestroAppState extends State<MaestroApp> {
           MaestroDestination('Messages', Icons.chat_bubble_outline,
               () => _selectSection(AppSection.messages),
               badge: _inbox?.unreadCount ?? 0),
-        ],
-        more: [
-          MaestroDestination('Payments', Icons.payments_outlined,
-              () => _selectSection(AppSection.payments)),
-          MaestroDestination('Pieces / Projects', Icons.music_note_outlined,
-              () => _selectSection(AppSection.students)),
-          MaestroDestination('Availability', Icons.event_available_outlined,
-              () => _selectSection(AppSection.calendar)),
         ],
       ),
     );
@@ -197,6 +211,7 @@ class _MaestroAppState extends State<MaestroApp> {
       AppSection.calendar => CalendarScreen(
           api: widget.api,
           teacher: _teacher!,
+          initialAvailability: _activeShortcut == 'availability',
           onOpenStudent: _openStudent,
           onOpenLesson: _openLesson,
           onTeacherChanged: _teacherChanged,
@@ -231,11 +246,35 @@ class _MaestroAppState extends State<MaestroApp> {
 
   void _selectSection(AppSection section) {
     setState(() {
+      if (_section == AppSection.calendar &&
+          _activeShortcut == 'availability') {
+        _pages.remove(AppSection.calendar);
+      }
       _section = section;
+      _activeShortcut = null;
       _selectedStudent = null;
       _selectedCourseId = null;
     });
   }
+
+  void _openShortcut(String shortcut, AppSection section) => setState(() {
+        if (_section == AppSection.calendar &&
+            _activeShortcut == 'availability') {
+          _pages.remove(AppSection.calendar);
+        }
+        _section = section;
+        _activeShortcut = shortcut;
+        _selectedStudent = null;
+        _selectedCourseId = null;
+      });
+
+  void _openAvailability() => setState(() {
+        _pages.remove(AppSection.calendar);
+        _section = AppSection.calendar;
+        _activeShortcut = 'availability';
+        _selectedStudent = null;
+        _selectedCourseId = null;
+      });
 
   void _teacherChanged(Teacher teacher) => setState(() {
         _teacher = teacher;

@@ -83,6 +83,21 @@ class _OneChildParentFixture extends _ParentFixture {
       [(await super.loadPortals()).first];
 }
 
+class _NoFinanceParentFixture extends _ParentFixture {
+  _NoFinanceParentFixture(super.client);
+
+  @override
+  Future<List<Map<String, dynamic>>> loadPortals() async => [
+        {
+          ...(await super.loadPortals()).first,
+          'canViewFinances': false,
+          'balance': null,
+          'fees': [],
+          'payments': [],
+        }
+      ];
+}
+
 void main() {
   testWidgets('parent sees combined balance and teacher-scoped payment rows',
       (tester) async {
@@ -103,8 +118,7 @@ void main() {
     expect(find.text('45.00 CAD'), findsWidgets);
     expect(find.text('Quick actions'), findsOneWidget);
 
-    await tester.ensureVisible(find.text('Payments'));
-    await tester.tap(find.text('Payments'));
+    await tester.tap(find.byKey(const ValueKey('shortcut-Payments')));
     await tester.pumpAndSettle();
     expect(find.text('All my children'), findsOneWidget);
     expect(find.text('Aria · Ada'), findsOneWidget);
@@ -129,8 +143,7 @@ void main() {
             inbox: inbox,
             onSignOut: () async {})));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Payments'));
-    await tester.tap(find.text('Payments'));
+    await tester.tap(find.byKey(const ValueKey('shortcut-Payments')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('All my children'));
     await tester.pumpAndSettle();
@@ -183,6 +196,24 @@ void main() {
             onSignOut: () async {})));
     await tester.pumpAndSettle();
     expect(find.text('No students linked to this account.'), findsOneWidget);
+    expect(find.byKey(const ValueKey('shortcut-Payments')), findsNothing);
+  });
+
+  testWidgets('parent without finance grant has no payment shortcut',
+      (tester) async {
+    final client = SupabaseClient('https://example.invalid', 'test-key',
+        authOptions: const AuthClientOptions(autoRefreshToken: false));
+    addTearDown(client.dispose);
+    final inbox = _QuietInbox(client);
+    addTearDown(inbox.dispose);
+    await tester.pumpWidget(MaterialApp(
+        home: ParentPortalScreen(
+            client: client,
+            service: _NoFinanceParentFixture(client),
+            inbox: inbox,
+            onSignOut: () async {})));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('shortcut-Payments')), findsNothing);
   });
 
   testWidgets('one-child selector has only the authorized child',
@@ -199,8 +230,7 @@ void main() {
             inbox: inbox,
             onSignOut: () async {})));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Payments'));
-    await tester.tap(find.text('Payments'));
+    await tester.tap(find.byKey(const ValueKey('shortcut-Payments')));
     await tester.pumpAndSettle();
     expect(find.text('All my children'), findsOneWidget);
     expect(find.text('Aria · Ada'), findsOneWidget);

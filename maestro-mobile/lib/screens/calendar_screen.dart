@@ -30,6 +30,7 @@ class CalendarScreen extends StatefulWidget {
     required this.onOpenStudent,
     required this.onOpenLesson,
     this.onTeacherChanged,
+    this.initialAvailability = false,
   });
 
   final MaestroDataSource api;
@@ -37,6 +38,7 @@ class CalendarScreen extends StatefulWidget {
   final ValueChanged<Student> onOpenStudent;
   final void Function(Student student, int courseId) onOpenLesson;
   final ValueChanged<Teacher>? onTeacherChanged;
+  final bool initialAvailability;
 
   @override
   State<CalendarScreen> createState() => _CalendarScreenState();
@@ -46,7 +48,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
   late Future<List<Student>> _future;
   DateTime _selectedDate = _dateOnly(DateTime.now());
   _CalendarView _view = _CalendarView.week;
-  _CalendarContent _contentView = _CalendarContent.lessons;
+  late _CalendarContent _contentView = widget.initialAvailability
+      ? _CalendarContent.availability
+      : _CalendarContent.lessons;
   Future<List<AvailabilityPeriod>>? _availabilityFuture;
   Future<List<TimeBlock>>? _blocksFuture;
   String _query = '';
@@ -56,6 +60,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
     super.initState();
     _future = widget.api.fetchStudents();
     _loadAvailability();
+  }
+
+  @override
+  void didUpdateWidget(covariant CalendarScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialAvailability != oldWidget.initialAvailability) {
+      _contentView = widget.initialAvailability
+          ? _CalendarContent.availability
+          : _CalendarContent.lessons;
+    }
   }
 
   @override

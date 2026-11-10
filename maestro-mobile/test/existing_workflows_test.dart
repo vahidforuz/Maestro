@@ -4,6 +4,8 @@ import 'package:maestro_mobile/models/payment.dart';
 import 'package:maestro_mobile/models/student.dart';
 import 'package:maestro_mobile/models/teacher.dart';
 import 'package:maestro_mobile/screens/maestro_app.dart';
+import 'package:maestro_mobile/screens/payments_screen.dart';
+import 'package:maestro_mobile/screens/students_screen.dart';
 import 'package:maestro_mobile/screens/student_profile_screen.dart';
 import 'package:maestro_mobile/services/maestro_data_source.dart';
 import 'package:maestro_mobile/services/studio_metrics.dart';
@@ -120,6 +122,35 @@ void main() {
   });
 
   for (final viewport in [const Size(420, 900), const Size(1280, 900)]) {
+    testWidgets(
+        'teacher shortcuts open existing screens at ${viewport.width}px',
+        (tester) async {
+      await tester.binding.setSurfaceSize(viewport);
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(MaterialApp(
+          home: MaestroApp(api: _FakeDataSource(), auth: _FakeAuth())));
+      await tester.pumpAndSettle();
+
+      Future<void> openShortcut(String label) async {
+        if (viewport.width < 600) {
+          await tester.tap(find.text('More'));
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(find.byKey(ValueKey('shortcut-$label')));
+        await tester.pumpAndSettle();
+      }
+
+      await openShortcut('Payments');
+      expect(find.byType(PaymentsScreen), findsOneWidget);
+
+      await openShortcut('Availability');
+      expect(find.text('Availability requires a Supabase teacher account.'),
+          findsOneWidget);
+
+      await openShortcut('Pieces / Projects');
+      expect(find.byType(StudentsScreen), findsOneWidget);
+    });
+
     testWidgets('teacher can navigate student tabs at ${viewport.width}px',
         (tester) async {
       final api = _FakeDataSource();

@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/messaging_inbox.dart';
 import '../services/messaging_service.dart';
 import '../services/parent_portal_service.dart';
+import '../theme/maestro_theme.dart';
 import '../widgets/maestro_card.dart';
 import '../widgets/maestro_shell.dart';
 import '../widgets/dashboard_layout.dart';
@@ -127,19 +128,31 @@ class _ParentPortalScreenState extends State<ParentPortalScreen> {
         else
           Wrap(spacing: 8, runSpacing: 8, children: [
             for (final entry in students.entries)
-              Chip(label: Text('${entry.value}')),
+              Chip(
+                label: Text('${entry.value}'),
+                backgroundColor: MaestroAccents.tint(
+                    MaestroAccents.blue,
+                    Theme.of(context).colorScheme.surface,
+                    Theme.of(context).brightness),
+                labelStyle: TextStyle(
+                    color: MaestroAccents.foreground(
+                        MaestroAccents.blue, Theme.of(context).brightness)),
+                side: BorderSide.none,
+              ),
           ]),
       ]),
       stats: [
-        DashboardStat('My Children', '${students.length}',
-            Icons.family_restroom_outlined),
+        DashboardStat(
+            'My Children', '${students.length}', Icons.family_restroom_outlined,
+            accent: MaestroAccents.blue),
         DashboardStat(
             'Upcoming Lessons',
             visible.isNotEmpty &&
                     visible.every((r) => r['canViewFinances'] != true)
                 ? '—'
                 : '${upcoming.length}',
-            Icons.event_note_outlined),
+            Icons.event_note_outlined,
+            accent: MaestroAccents.violet),
         DashboardStat(
             'Payments / Balance',
             totals.isEmpty
@@ -147,22 +160,30 @@ class _ParentPortalScreenState extends State<ParentPortalScreen> {
                 : totals.entries
                     .map((e) => money(e.value.abs(), e.key))
                     .join(' · '),
-            Icons.payments_outlined),
+            Icons.payments_outlined,
+            accent: MaestroAccents.green),
         DashboardStat('Unread Messages', '${inbox.unreadCount}',
-            Icons.mark_chat_unread_outlined),
+            Icons.mark_chat_unread_outlined,
+            accent: MaestroAccents.pink),
       ],
       actions: [
         DashboardAction('My Children', Icons.family_restroom_outlined,
-            () => setState(() => section = 4)),
+            () => setState(() => section = 4),
+            accent: MaestroAccents.blue),
         DashboardAction('Lessons', Icons.menu_book_outlined,
-            () => setState(() => section = 5)),
+            () => setState(() => section = 5),
+            accent: MaestroAccents.violet),
         DashboardAction('Payments', Icons.payments_outlined,
-            totals.isEmpty ? null : () => setState(() => section = 1)),
+            totals.isEmpty ? null : () => setState(() => section = 1),
+            accent: MaestroAccents.green),
         DashboardAction('Calendar', Icons.calendar_month_outlined,
-            () => setState(() => section = 5)),
+            () => setState(() => section = 5),
+            accent: MaestroAccents.orange),
         DashboardAction('Messages', Icons.chat_bubble_outline,
-            () => setState(() => section = 2)),
-        const DashboardAction('Progress', Icons.trending_up, null),
+            () => setState(() => section = 2),
+            accent: MaestroAccents.pink),
+        const DashboardAction('Progress', Icons.trending_up, null,
+            accent: MaestroAccents.cyan),
       ],
       sections: [
         MaestroCard(
@@ -171,9 +192,12 @@ class _ParentPortalScreenState extends State<ParentPortalScreen> {
           Text('Upcoming Lessons',
               style: Theme.of(context).textTheme.titleMedium),
           if (upcoming.isEmpty)
-            Text(visible.any((r) => r['canViewFinances'] != true)
-                ? 'Lesson details are unavailable for this child.'
-                : 'No upcoming lessons.'),
+            DashboardEmptyState(
+              visible.any((r) => r['canViewFinances'] != true)
+                  ? 'Lesson details are unavailable for this child.'
+                  : 'No upcoming lessons.',
+              icon: Icons.event_note_outlined,
+            ),
           for (final lesson in upcoming.take(3))
             ListTile(
                 title: Text('${lesson['title']}'),
@@ -186,7 +210,8 @@ class _ParentPortalScreenState extends State<ParentPortalScreen> {
           Text('Payment Information',
               style: Theme.of(context).textTheme.titleMedium),
           if (totals.isEmpty)
-            const ListTile(title: Text('No payment information available.')),
+            const DashboardEmptyState('No payment information available.',
+                icon: Icons.payments_outlined),
           for (final entry in totals.entries)
             ListTile(
                 title: Text(entry.value > 0
@@ -539,9 +564,18 @@ class _ParentPortalScreenState extends State<ParentPortalScreen> {
                       4 => 1,
                       5 => 2,
                       2 => 3,
-                      1 || 3 => 4,
+                      3 => 4,
                       _ => 0
                     },
+                    shortcuts: [
+                      if (data.any((r) => r['canViewFinances'] == true))
+                        MaestroShortcut(
+                            'Payments',
+                            Icons.payments_outlined,
+                            MaestroAccents.green,
+                            () => setState(() => section = 1),
+                            selected: section == 1),
+                    ],
                     unreadCount: inbox.unreadCount,
                     onRefresh: refresh,
                     onProfile: () => setState(() => section = 3),
@@ -561,17 +595,6 @@ class _ParentPortalScreenState extends State<ParentPortalScreen> {
                       MaestroDestination('Messages', Icons.chat_bubble_outline,
                           () => setState(() => section = 2),
                           badge: inbox.unreadCount),
-                    ],
-                    more: [
-                      if (data.any((r) => r['canViewFinances'] == true))
-                        MaestroDestination('Payments', Icons.payments_outlined,
-                            () => setState(() => section = 1)),
-                      if (widget.onSwitchTeacher != null)
-                        MaestroDestination('Teacher Portal',
-                            Icons.school_outlined, widget.onSwitchTeacher!),
-                      if (widget.onSwitchStudent != null)
-                        MaestroDestination('Student Portal',
-                            Icons.music_note_outlined, widget.onSwitchStudent!),
                     ],
                     body: IndexedStack(index: section, children: [
                       home(data),

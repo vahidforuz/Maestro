@@ -7,6 +7,7 @@ import '../models/teacher.dart';
 import '../services/maestro_data_source.dart';
 import '../services/messaging_inbox.dart';
 import '../services/studio_metrics.dart';
+import '../theme/maestro_theme.dart';
 import '../widgets/async_state.dart';
 import '../widgets/maestro_card.dart';
 import '../widgets/status_badge.dart';
@@ -93,28 +94,38 @@ class _DashboardScreenState extends State<DashboardScreen> {
       greeting: 'Welcome, ${widget.teacher.displayName}',
       stats: [
         DashboardStat(
-            'Total Students', '${students.length}', Icons.people_outline),
+            'Total Students', '${students.length}', Icons.people_outline,
+            accent: MaestroAccents.blue),
         DashboardStat('Lessons This Month', '${monthLessons.length}',
-            Icons.event_note_outlined),
+            Icons.event_note_outlined,
+            accent: MaestroAccents.violet),
         DashboardStat('Payments This Month', '${monthPayments.length}',
-            Icons.payments_outlined),
+            Icons.payments_outlined,
+            accent: MaestroAccents.green),
         DashboardStat(
             'Revenue This Month',
             NumberFormat.simpleCurrency().format(totalRevenue),
-            Icons.trending_up),
+            Icons.trending_up,
+            accent: MaestroAccents.green),
       ],
       actions: [
         DashboardAction(
-            'Add Student', Icons.person_add_alt_1, widget.onAddStudent),
+            'Add Student', Icons.person_add_alt_1, widget.onAddStudent,
+            accent: MaestroAccents.blue),
         DashboardAction('Schedule Lesson', Icons.event_available_outlined,
-            widget.onOpenCalendar),
+            widget.onOpenCalendar,
+            accent: MaestroAccents.orange),
         DashboardAction(
-            'Record Payment', Icons.add_card_outlined, widget.onOpenPayments),
+            'Record Payment', Icons.add_card_outlined, widget.onOpenPayments,
+            accent: MaestroAccents.green),
         DashboardAction(
-            'Add Note', Icons.note_add_outlined, widget.onOpenStudents),
+            'Add Note', Icons.note_add_outlined, widget.onOpenStudents,
+            accent: MaestroAccents.violet),
         DashboardAction(
-            'Messages', Icons.chat_bubble_outline, widget.onOpenMessages),
-        const DashboardAction('Reports', Icons.bar_chart_outlined, null),
+            'Messages', Icons.chat_bubble_outline, widget.onOpenMessages,
+            accent: MaestroAccents.pink),
+        const DashboardAction('Reports', Icons.bar_chart_outlined, null,
+            accent: MaestroAccents.cyan),
       ],
       sections: [
         _TodayCard(students: students, onOpenStudent: widget.onOpenStudent),
@@ -186,7 +197,8 @@ class _TodayCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           if (todaysLessons.isEmpty)
-            const Text('No lessons scheduled for today.')
+            const DashboardEmptyState('No lessons scheduled for today.',
+                icon: Icons.event_available_outlined)
           else
             for (final lesson in todaysLessons)
               ListTile(
@@ -229,7 +241,8 @@ class _UpcomingCard extends StatelessWidget {
               ?.copyWith(fontWeight: FontWeight.w800)),
       const SizedBox(height: 10),
       if (upcoming.isEmpty)
-        const Text('No upcoming lessons.')
+        const DashboardEmptyState('No upcoming lessons.',
+            icon: Icons.event_note_outlined)
       else
         for (final lesson in upcoming)
           ListTile(
@@ -267,7 +280,8 @@ class _RecentMessagesCard extends StatelessWidget {
           if (inbox != null) Text('${inbox!.unreadCount} unread'),
           const SizedBox(height: 10),
           if (inbox == null || inbox!.conversations.isEmpty)
-            const Text('No recent messages.')
+            const DashboardEmptyState('No recent messages.',
+                icon: Icons.chat_bubble_outline)
           else
             for (final row in inbox!.conversations.take(3))
               ListTile(
@@ -314,7 +328,8 @@ class _PaymentAttentionCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           if (visible.isEmpty)
-            const Text('No student balances need attention.')
+            const DashboardEmptyState('No student balances need attention.',
+                icon: Icons.check_circle_outline)
           else
             for (final student in visible)
               ListTile(
@@ -358,7 +373,8 @@ class _ReviewCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           if (withNotes.isEmpty)
-            const Text('No review notes found.')
+            const DashboardEmptyState('No review notes found.',
+                icon: Icons.rate_review_outlined)
           else
             for (final student in withNotes)
               ListTile(
