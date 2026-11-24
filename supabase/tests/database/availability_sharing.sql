@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(14);
+select plan(20);
 set local role authenticated;
 select set_config('request.jwt.claim.sub',
   '10000000-0000-0000-0000-000000000001', true);
@@ -26,8 +26,10 @@ update public.lessons set lesson_date = '2026-10-26'
 set local role authenticated;
 select set_config('request.jwt.claim.sub',
   '10000000-0000-0000-0000-000000000001', true);
-select set_config('share.token', public.maestro_create_availability_link(
-  now() + interval '7 days', '2026-10-26', '2026-10-26')->>'token', true);
+with link as (select public.maestro_create_availability_link(
+  now() + interval '7 days', '2026-10-26', '2026-10-26') as value)
+select set_config('share.token', value->>'token', true),
+  set_config('share.link_id', value->>'id', true) from link;
 select is(length(current_setting('share.token')), 64,
   'share token has 256 bits encoded as hex');
 select ok((select relrowsecurity from pg_class
@@ -35,6 +37,12 @@ select ok((select relrowsecurity from pg_class
   'share link metadata uses RLS');
 
 set local role anon;
+select ok(has_function_privilege('anon',
+  'public.maestro_shared_availability(text,date,integer)', 'EXECUTE'),
+  'anonymous callers may use the checked public availability RPC');
+select ok(not has_function_privilege('anon',
+  'public.maestro_shared_availability_raw(text,date,integer)', 'EXECUTE'),
+  'anonymous callers cannot invoke the raw availability function');
 select is((public.maestro_shared_availability(current_setting('share.token'),
   '2026-10-26', 30)->>'timezone'), 'America/Toronto',
   'public view states the teacher timezone');
@@ -51,8 +59,18 @@ select ok(not exists (select 1 from jsonb_array_elements(
 select ok(position('Private' in public.maestro_shared_availability(
   current_setting('share.token'), '2026-10-26', 30)::text) = 0,
   'public result contains no student name');
-select is((select count(*)::integer from public.availability_share_links),
-  0, 'anonymous user cannot read raw share link records');
+select ok(not has_table_privilege('anon',
+  'public.availability_share_links', 'SELECT'),
+  'anonymous role has no direct share-link table grant');
+select ok(not has_column_privilege('anon',
+  'public.availability_share_links', 'token_hash', 'SELECT'),
+  'anonymous role cannot enumerate sharing token hashes');
+select ok(not has_column_privilege('anon',
+  'public.students', 'name', 'SELECT'),
+  'anonymous role cannot read student names directly');
+select throws_ok('select count(*) from public.availability_share_links',
+  '42501', 'permission denied for table availability_share_links',
+  'anonymous direct share-link query is denied');
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub',
@@ -76,7 +94,7 @@ set local role authenticated;
 select set_config('request.jwt.claim.sub',
   '10000000-0000-0000-0000-000000000001', true);
 update public.availability_share_links set revoked_at = now()
-  where token_hash = sha256(convert_to(current_setting('share.token'), 'UTF8'));
+  where id = current_setting('share.link_id')::uuid;
 set local role anon;
 select throws_ok(
   'select public.maestro_shared_availability(current_setting(''share.token''), ''2026-10-26'', 30)',
@@ -89,10 +107,17 @@ select throws_ok(
 set local role authenticated;
 select set_config('request.jwt.claim.sub',
   '10000000-0000-0000-0000-000000000001', true);
-select set_config('share.expired', public.maestro_create_availability_link(
-  now() + interval '1 day')->>'token', true);
+select ok(not has_column_privilege('authenticated',
+  'public.availability_share_links', 'expires_at', 'UPDATE'),
+  'teacher cannot edit a link expiry directly');
+with link as (select public.maestro_create_availability_link(
+  now() + interval '1 day') as value)
+select set_config('share.expired', value->>'token', true),
+  set_config('share.expired_id', value->>'id', true) from link;
+reset role;
+-- Test-only fixture mutation: callers may revoke a link, not edit its expiry.
 update public.availability_share_links set expires_at = now() - interval '1 minute'
-  where token_hash = sha256(convert_to(current_setting('share.expired'), 'UTF8'));
+  where id = current_setting('share.expired_id')::uuid;
 set local role anon;
 select throws_ok(
   'select public.maestro_shared_availability(current_setting(''share.expired''), ''2026-10-26'', 30)',

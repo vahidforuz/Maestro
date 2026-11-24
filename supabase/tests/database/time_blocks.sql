@@ -1,7 +1,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
-select plan(14);
+select plan(17);
 set local role authenticated;
 select set_config('request.jwt.claim.sub',
   '10000000-0000-0000-0000-000000000001', true);
@@ -25,8 +25,18 @@ select ok((select relrowsecurity from pg_class
   'occurrence overrides use RLS');
 
 set local role anon;
-select is((select count(*)::integer from public.teacher_time_blocks), 0,
-  'anonymous users cannot read private blocks');
+select ok(not has_table_privilege('anon',
+  'public.teacher_time_blocks', 'SELECT'),
+  'anonymous role has no direct time-block table grant');
+select ok(not has_table_privilege('anon',
+  'public.teacher_time_block_exceptions', 'SELECT'),
+  'anonymous role has no direct occurrence-override table grant');
+select throws_ok('select count(*) from public.teacher_time_blocks',
+  '42501', 'permission denied for table teacher_time_blocks',
+  'anonymous direct time-block query is denied');
+select throws_ok('select count(*) from public.teacher_time_block_exceptions',
+  '42501', 'permission denied for table teacher_time_block_exceptions',
+  'anonymous direct occurrence-override query is denied');
 select ok(exists (select 1 from jsonb_array_elements(
   public.maestro_shared_availability(current_setting('block.token'),
     '2026-10-26',30)->'slots') slot

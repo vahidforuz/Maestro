@@ -32,6 +32,7 @@ for platform, host in (("web", "127.0.0.1"), ("windows", "127.0.0.1"),
                        ("android", "10.0.2.2")):
     file = MOBILE / f".local.flutter.{platform}.json"
     config = {
+        "MAESTRO_ENV": "local",
         "SUPABASE_URL": f"http://{host}:{parsed.port}",
         "SUPABASE_PUBLISHABLE_KEY": key,
     }
